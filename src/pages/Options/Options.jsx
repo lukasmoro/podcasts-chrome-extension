@@ -1,18 +1,37 @@
+<<<<<<< Updated upstream
 import React from 'react';
+=======
+// Options.jsx - Updated to work with unified storage
+import React, { useState } from 'react';
+>>>>>>> Stashed changes
 import Form from './Form';
 import List from './List';
 import Overlay from '../Newtab/Overlay';
 import Recommendations from '../Newtab/Recommendations';
 import BuyMeACoffeeButton from '../Newtab/BuyMeACoffeeButton';
 import { ThemeProvider } from '../Newtab/ThemeProvider';
+<<<<<<< Updated upstream
 import { usePodcastStorage } from '../../hooks/usePodcastStorage';
+=======
+import { usePodcastStore } from '../../hooks/usePodcastStore';
+>>>>>>> Stashed changes
 import './Options.css';
 import './Form.css';
 import './List.css';
 import '../../root/Root.css';
 
 export default function Options() {
+<<<<<<< Updated upstream
   const { items, handleAddPodcast, handleRemovePodcast } = usePodcastStorage();
+=======
+  const [isDragging, setIsDragging] = useState(false);
+  const {
+    podcasts,
+    handleAddPodcast,
+    handleRemovePodcast,
+    handleReorderPodcasts,
+  } = usePodcastStore();
+>>>>>>> Stashed changes
 
   const podcastsRow1 = [
     {
@@ -61,7 +80,7 @@ export default function Options() {
               <div className="overflow">
                 <div className="podcast-divider"></div>
                 <List
-                  items={items}
+                  podcasts={podcasts}
                   removeUrl={handleRemovePodcast}
                   className="options-list-overflow"
                 />

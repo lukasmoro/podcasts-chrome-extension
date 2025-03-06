@@ -1,30 +1,30 @@
-import { useState, useEffect } from 'react';
+// usePodcastPlayback.js - Updated to work with unified storage
+import { useState, useEffect, useCallback } from 'react';
+import { usePodcastStore } from './usePodcastStore';
 
-const PLAYBACK_STATUS = {
-  UNPLAYED: 'UNPLAYED',
-  IN_PROGRESS: 'IN_PROGRESS',
-  FINISHED: 'FINISHED',
-};
-
-const FINISHED_THRESHOLD = 30;
-
+<<<<<<< Updated upstream:src/hooks/usePlaybackPosition.js
 const usePlaybackPosition = (podcastId) => {
+=======
+const usePodcastPlayback = (podcastId) => {
+  const {
+    podcasts,
+    PLAYBACK_STATUS,
+    updatePlaybackState: updateStore,
+    resetPlaybackState: resetStore,
+    getPodcastPlayback,
+  } = usePodcastStore();
+
+>>>>>>> Stashed changes:src/hooks/usePodcastPlayback.js
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [status, setStatus] = useState(PLAYBACK_STATUS.UNPLAYED);
   const [wasFinished, setWasFinished] = useState(false);
 
   useEffect(() => {
-    const loadSavedState = async () => {
-      try {
-        const result = await chrome.storage.local.get(podcastId);
-        if (result[podcastId]) {
-          const {
-            time,
-            status: savedStatus,
-            duration: savedDuration,
-          } = result[podcastId];
+    const loadPlaybackState = () => {
+      const playback = getPodcastPlayback(podcastId);
 
+<<<<<<< Updated upstream:src/hooks/usePlaybackPosition.js
           // Check if the podcast was previously finished
           if (savedStatus === PLAYBACK_STATUS.FINISHED) {
             // Set time to 0 for replay but maintain FINISHED status
@@ -33,15 +33,32 @@ const usePlaybackPosition = (podcastId) => {
           } else {
             setCurrentTime(time || 0);
           }
+=======
+      if (playback.status === PLAYBACK_STATUS.FINISHED) {
+        setCurrentTime(0);
+        setWasFinished(true);
+      } else {
+        setCurrentTime(playback.currentTime || 0);
+      }
+>>>>>>> Stashed changes:src/hooks/usePodcastPlayback.js
 
-          setStatus(savedStatus || PLAYBACK_STATUS.UNPLAYED);
-          setDuration(savedDuration || 0);
-        }
-      } catch (error) {
-        console.error('Error loading playback state:', error);
+      setStatus(playback.status || PLAYBACK_STATUS.UNPLAYED);
+      setDuration(playback.duration || 0);
+    };
+
+    loadPlaybackState();
+
+    // Listen for podcast storage updates
+    const handleStorageUpdate = (event) => {
+      if (
+        event.detail.action === 'playback-update' ||
+        event.detail.action === 'playback-reset'
+      ) {
+        loadPlaybackState();
       }
     };
 
+<<<<<<< Updated upstream:src/hooks/usePlaybackPosition.js
     loadSavedState();
 
     // Add storage change listener
@@ -70,17 +87,24 @@ const usePlaybackPosition = (podcastId) => {
     };
 
     chrome.storage.onChanged.addListener(handleStorageChange);
+=======
+    window.addEventListener('podcast-storage-updated', handleStorageUpdate);
+>>>>>>> Stashed changes:src/hooks/usePodcastPlayback.js
 
     // Cleanup listener on unmount
     return () => {
-      chrome.storage.onChanged.removeListener(handleStorageChange);
+      window.removeEventListener(
+        'podcast-storage-updated',
+        handleStorageUpdate
+      );
     };
-  }, [podcastId, wasFinished]);
+  }, [podcastId, PLAYBACK_STATUS, getPodcastPlayback]);
 
-  const updatePlaybackState = async (time, totalDuration) => {
-    try {
-      let newStatus = status;
+  const updatePlaybackState = useCallback(
+    async (time, totalDuration) => {
+      await updateStore(podcastId, time, totalDuration);
 
+<<<<<<< Updated upstream:src/hooks/usePlaybackPosition.js
       if (time === 0) {
         // If starting from beginning but was previously finished, keep FINISHED status
         newStatus = wasFinished
@@ -92,36 +116,37 @@ const usePlaybackPosition = (podcastId) => {
       } else if (time > 0) {
         // When in progress, update status normally
         newStatus = PLAYBACK_STATUS.IN_PROGRESS;
+=======
+      // Update local state
+      if (totalDuration && totalDuration - time <= 30) {
+        setWasFinished(true);
+>>>>>>> Stashed changes:src/hooks/usePodcastPlayback.js
       }
 
-      const newState = {
-        time,
-        status: newStatus,
-        duration: totalDuration,
-        lastUpdated: Date.now(),
-      };
-
-      await chrome.storage.local.set({ [podcastId]: newState });
-
       setCurrentTime(time);
-      setStatus(newStatus);
       setDuration(totalDuration);
-    } catch (error) {
-      console.error('Error saving playback state:', error);
-    }
-  };
 
-  const resetPlaybackState = async () => {
-    try {
-      await chrome.storage.local.remove(podcastId);
-      setCurrentTime(0);
-      setStatus(PLAYBACK_STATUS.UNPLAYED);
-      setDuration(0);
-      setWasFinished(false);
-    } catch (error) {
-      console.error('Error resetting playback state:', error);
-    }
-  };
+      // Update status based on the new time
+      if (time === 0) {
+        setStatus(
+          wasFinished ? PLAYBACK_STATUS.FINISHED : PLAYBACK_STATUS.UNPLAYED
+        );
+      } else if (totalDuration && totalDuration - time <= 30) {
+        setStatus(PLAYBACK_STATUS.FINISHED);
+      } else if (time > 0) {
+        setStatus(PLAYBACK_STATUS.IN_PROGRESS);
+      }
+    },
+    [podcastId, updateStore, wasFinished, PLAYBACK_STATUS]
+  );
+
+  const resetPlaybackState = useCallback(async () => {
+    await resetStore(podcastId);
+    setCurrentTime(0);
+    setStatus(PLAYBACK_STATUS.UNPLAYED);
+    setDuration(0);
+    setWasFinished(false);
+  }, [podcastId, resetStore, PLAYBACK_STATUS]);
 
   return {
     currentTime,

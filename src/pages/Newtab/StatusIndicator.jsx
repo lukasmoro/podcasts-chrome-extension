@@ -1,11 +1,51 @@
+<<<<<<< Updated upstream
 import React from 'react';
 import usePlaybackPosition from '../../hooks/usePlaybackPosition';
+=======
+// StatusIndicator.jsx - Updated to work with unified storage
+import React, { useState, useEffect } from 'react';
+import { usePodcastStore } from '../../hooks/usePodcastStore';
+>>>>>>> Stashed changes
 import './StatusIndicator.css';
 import { CheckIcon } from '../Icons/CheckIcon';
 
 const StatusIndicator = ({ podcastId }) => {
+<<<<<<< Updated upstream
   const { status: playbackStatus, PLAYBACK_STATUS } =
     usePlaybackPosition(podcastId);
+=======
+  const { getPodcastPlayback, PLAYBACK_STATUS } = usePodcastStore();
+  const [playbackStatus, setPlaybackStatus] = useState(
+    PLAYBACK_STATUS.UNPLAYED
+  );
+
+  useEffect(() => {
+    const loadPlaybackStatus = () => {
+      const playback = getPodcastPlayback(podcastId);
+      setPlaybackStatus(playback.status);
+    };
+
+    loadPlaybackStatus();
+
+    const handleStorageUpdate = (event) => {
+      if (
+        event.detail.action === 'playback-update' ||
+        event.detail.action === 'playback-reset'
+      ) {
+        loadPlaybackStatus();
+      }
+    };
+
+    window.addEventListener('podcast-storage-updated', handleStorageUpdate);
+
+    return () => {
+      window.removeEventListener(
+        'podcast-storage-updated',
+        handleStorageUpdate
+      );
+    };
+  }, [podcastId, getPodcastPlayback]);
+>>>>>>> Stashed changes
 
   const getStatusColor = () => {
     switch (playbackStatus) {

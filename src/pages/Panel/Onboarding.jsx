@@ -1,14 +1,34 @@
+// Onboarding.jsx - Updated to work with unified storage
 import React from 'react';
 import Recommendations from '../Newtab/Recommendations.jsx';
 import Overlay from '../Newtab/Overlay.jsx';
 import Form from '../Options/Form.jsx';
 import { ThemeProvider } from '../Newtab/ThemeProvider';
+<<<<<<< Updated upstream
 import { usePodcastStorage } from '../../hooks/usePodcastStorage.js';
+=======
+import { usePodcastStore } from '../../hooks/usePodcastStore';
+>>>>>>> Stashed changes
 import './Onboarding.css';
 import '../../root/Root.css';
 
+<<<<<<< Updated upstream
 export default function Onboarding() {
   const { items, handleAddPodcast } = usePodcastStorage();
+=======
+export default function Onboarding({ onPodcastAdded }) {
+  const { podcasts, handleAddPodcast } = usePodcastStore();
+
+  // Create a wrapper for handleAddPodcast that also calls onPodcastAdded
+  const handleAddPodcastWithCallback = async (item) => {
+    await handleAddPodcast(item);
+
+    // After podcast is added, notify parent component to switch views
+    if (onPodcastAdded) {
+      onPodcastAdded();
+    }
+  };
+>>>>>>> Stashed changes
 
   const podcastsRow1 = [
     {

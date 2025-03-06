@@ -1,9 +1,14 @@
+// AudioPlayer.jsx - Updated to work with unified storage
 import React, { useState, useRef, useEffect } from 'react';
 import { animated } from '@react-spring/web';
 import { useSpring } from '@react-spring/core';
 import './AudioPlayer.css';
 import BehaviourClick from './BehaviourClick.jsx';
+<<<<<<< Updated upstream
 import usePlaybackPosition from '../../hooks/usePlaybackPosition.js';
+=======
+import { usePodcastStore } from '../../hooks/usePodcastStore';
+>>>>>>> Stashed changes
 import { PlayIcon } from '../Icons/PlayIcon';
 import { PauseIcon } from '../Icons/PauseIcon';
 // Import Google Analytics tracking functions
@@ -14,7 +19,9 @@ const AudioPlayer = (props) => {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [wasFinished, setWasFinished] = useState(false);
 
+<<<<<<< Updated upstream
   const {
     currentTime: savedTime,
     duration: savedDuration,
@@ -23,6 +30,16 @@ const AudioPlayer = (props) => {
     PLAYBACK_STATUS,
     wasFinished,
   } = usePlaybackPosition(props.podcastId);
+=======
+  const { getPodcastPlayback, updatePlaybackState, PLAYBACK_STATUS } =
+    usePodcastStore();
+
+  // Get playback data from the store
+  const playback = getPodcastPlayback(props.podcastId);
+  const savedTime = playback.currentTime;
+  const savedDuration = playback.duration;
+  const status = playback.status;
+>>>>>>> Stashed changes
 
   const audioPlayer = useRef();
   const progressBar = useRef();
@@ -34,6 +51,12 @@ const AudioPlayer = (props) => {
     to: { opacity: isPlaying ? 1 : 0, y: isPlaying ? 50 : 0 },
     config: { tension: 280, friction: 60 },
   }));
+
+  useEffect(() => {
+    if (status === PLAYBACK_STATUS.FINISHED) {
+      setWasFinished(true);
+    }
+  }, [status, PLAYBACK_STATUS]);
 
   useEffect(() => {
     if (!isInitialized && audioPlayer.current) {
@@ -113,7 +136,7 @@ const AudioPlayer = (props) => {
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
-  }, [savedTime, isInitialized]);
+  }, [savedTime, isInitialized, status, PLAYBACK_STATUS]);
 
   useEffect(() => {
     const audio = audioPlayer.current;
@@ -148,7 +171,7 @@ const AudioPlayer = (props) => {
       const now = Date.now();
       if (now - lastUpdateTimeRef.current > 1000) {
         lastUpdateTimeRef.current = now;
-        updatePlaybackState(currentValue, audioDuration);
+        updatePlaybackState(props.podcastId, currentValue, audioDuration);
       }
     };
 
@@ -157,7 +180,7 @@ const AudioPlayer = (props) => {
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
     };
-  }, [updatePlaybackState]);
+  }, [updatePlaybackState, props.podcastId]);
 
   useEffect(() => {
     const audio = audioPlayer.current;
@@ -192,7 +215,7 @@ const AudioPlayer = (props) => {
       });
 
       if (audio.currentTime && audio.duration) {
-        updatePlaybackState(audio.currentTime, audio.duration);
+        updatePlaybackState(props.podcastId, audio.currentTime, audio.duration);
       }
 
       // Track pause event with Google Analytics
@@ -215,7 +238,7 @@ const AudioPlayer = (props) => {
       });
 
       if (audio.duration) {
-        updatePlaybackState(audio.duration, audio.duration);
+        updatePlaybackState(props.podcastId, audio.duration, audio.duration);
       }
 
       // Track podcast completion with Google Analytics
@@ -252,7 +275,7 @@ const AudioPlayer = (props) => {
       audio.removeEventListener('durationchange', handleDurationChange);
 
       if (audio.currentTime && audio.duration) {
-        updatePlaybackState(audio.currentTime, audio.duration);
+        updatePlaybackState(props.podcastId, audio.currentTime, audio.duration);
       }
     };
   }, [updatePlaybackState, props.onEnded, api, props.podcastId, props.title]);
@@ -292,7 +315,11 @@ const AudioPlayer = (props) => {
     }
 
     if (audioPlayer.current.duration) {
-      updatePlaybackState(newTime, audioPlayer.current.duration);
+      updatePlaybackState(
+        props.podcastId,
+        newTime,
+        audioPlayer.current.duration
+      );
     }
 
     // Track seek event with Google Analytics
