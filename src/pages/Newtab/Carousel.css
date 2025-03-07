@@ -130,6 +130,18 @@ h3 {
   z-index: 1000;
 }
 
+.error-message {
+  color: #ff6b6b;
+  font-size: 14px;
+  text-align: center;
+  padding: 10px;
+  background-color: rgba(255, 107, 107, 0.1);
+  border-radius: 4px;
+  margin: 10px 0;
+  width: 80%;
+  font-weight: 500;
+}
+
 .cards.visible .cover-container {
   pointer-events: auto;
 }

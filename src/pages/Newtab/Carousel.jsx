@@ -5,14 +5,14 @@ import DraggableInfoCard from './DraggableInfoCard.jsx';
 import { parseRss } from '../../utils/rssParser';
 import { textTruncate } from '../../utils/textTruncate.js';
 import useScrollPosition from '../../hooks/useScrollPosition';
+import { StorageService, EVENTS } from '../../utils/storageService';
 import './Carousel.css';
-
-const PODCAST_UPDATED_EVENT = 'podcast-storage-updated';
 
 const Carousel = ({ isBlurVisible, handleBlurToggle, onPodcastEnd }) => {
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoadingActive] = useState(true);
   const [activeInfoCard, setActiveInfoCard] = useState(null);
+  const [podcastFeedItems, setPodcastFeedItems] = useState([]);
 
   const { scrollPosition, indicatorIndex } = useScrollPosition(
     'parent-container',
@@ -23,55 +23,159 @@ const Carousel = ({ isBlurVisible, handleBlurToggle, onPodcastEnd }) => {
     setIsLoadingActive(false);
   };
 
-  const loadPodcasts = () => {
-    setIsLoadingActive(true);
+  // Function to fetch and parse RSS feeds for each podcast
+  const fetchPodcastContent = async (podcasts) => {
+    if (!podcasts || podcasts.length === 0) {
+      setPodcastFeedItems([]);
+      setItems([]);
+      setIsLoadingActive(false);
+      return;
+    }
 
-    chrome.storage.local.get(['latestPodcasts', 'newUrls'], (items) => {
-      if (items.latestPodcasts && items.latestPodcasts.length > 0) {
-        setItems(items.latestPodcasts);
-        setTimeout(() => setIsLoadingActive(false), 500);
-      } else if (items.newUrls && items.newUrls.length > 0) {
-        const newUrls = items.newUrls.map((newUrl) => newUrl.text);
-        Promise.all(newUrls.map((url) => fetch(url)))
-          .then((responses) => Promise.all(responses.map((r) => r.text())))
-          .then((xmlStrings) => {
-            const firstPodcasts = xmlStrings.map(parseRss);
-            setItems(firstPodcasts);
-            setTimeout(() => setIsLoadingActive(false), 500);
-          })
-          .catch((error) => {
-            console.error('Error fetching podcast feeds:', error);
-            setIsLoadingActive(false);
-          });
-      } else {
-        setItems([]);
+    setIsLoadingActive(true);
+    console.log('Fetching podcast content for', podcasts.length, 'podcasts');
+
+    try {
+      // Get URLs from the podcast entries
+      const urls = podcasts.map(podcast => podcast.url || podcast.text);
+      
+      // Safety check - make sure we have valid URLs
+      if (urls.filter(url => url).length === 0) {
+        console.error('No valid URLs found in podcasts array:', podcasts);
         setIsLoadingActive(false);
+        return;
       }
-    });
+
+      // Fetch and parse each RSS feed
+      const results = await Promise.all(
+        podcasts.map(async (podcast, index) => {
+          const url = podcast.url || podcast.text;
+          if (!url) {
+            console.error('No URL found for podcast:', podcast);
+            return null;
+          }
+          
+          try {
+            const response = await fetch(url);
+            if (!response.ok) {
+              console.error(`Error fetching podcast at ${url}: ${response.status} ${response.statusText}`);
+              // Return a minimal podcast object with the data we already have
+              return {
+                title: podcast.title || podcast.podcastName || 'Unknown Podcast',
+                episode: 'Unable to load episode',
+                mp3: null,
+                image: podcast.artwork || podcast.artworkUrl,
+                key: podcast.id || podcast.key,
+                podcastId: podcast.id || podcast.key,
+                originalUrl: url,
+                error: true,
+                errorMessage: `Failed to load podcast feed: ${response.status} ${response.statusText}`
+              };
+            }
+            
+            const text = await response.text();
+            const parsedItem = parseRss(text);
+            
+            if (parsedItem) {
+              // Add podcast collection item data to the parsed RSS feed
+              return {
+                ...parsedItem,
+                title: parsedItem.title || podcast.title || podcast.podcastName,
+                key: podcast.id || podcast.key,
+                podcastId: podcast.id || podcast.key,
+                originalUrl: url,
+                playbackStatus: podcast.playbackStatus || podcast.playback?.status,
+                error: false
+              };
+            }
+            
+            // Return a minimal podcast object if parsing failed
+            return {
+              title: podcast.title || podcast.podcastName || 'Unknown Podcast',
+              episode: 'Unable to parse episode',
+              mp3: null,
+              image: podcast.artwork || podcast.artworkUrl,
+              key: podcast.id || podcast.key,
+              podcastId: podcast.id || podcast.key,
+              originalUrl: url,
+              error: true,
+              errorMessage: 'Failed to parse podcast feed'
+            };
+          } catch (error) {
+            console.error(`Error fetching podcast at ${url}:`, error);
+            // Return a minimal podcast object with the data we already have
+            return {
+              title: podcast.title || podcast.podcastName || 'Unknown Podcast',
+              episode: 'Unable to load episode',
+              mp3: null,
+              image: podcast.artwork || podcast.artworkUrl,
+              key: podcast.id || podcast.key,
+              podcastId: podcast.id || podcast.key,
+              originalUrl: url,
+              error: true,
+              errorMessage: error.message
+            };
+          }
+        })
+      );
+
+      console.log('Fetched podcast content results:', results);
+
+      // Filter out any complete failures (should be rare now with our fallbacks)
+      const validResults = results.filter(item => item !== null);
+      setPodcastFeedItems(validResults);
+      setItems(validResults);
+      
+    } catch (error) {
+      console.error('Error in fetchPodcastContent:', error);
+    } finally {
+      setTimeout(() => setIsLoadingActive(false), 500);
+    }
+  };
+
+  // Load podcasts from storage and fetch their content
+  const loadPodcasts = async () => {
+    try {
+      // Get podcasts from the centralized storage
+      const podcasts = await StorageService.getAllPodcasts();
+      
+      // Fetch and parse the RSS content for each podcast
+      fetchPodcastContent(podcasts);
+    } catch (error) {
+      console.error('Error loading podcasts:', error);
+      setIsLoadingActive(false);
+    }
   };
 
   useEffect(() => {
+    // Initial load
     loadPodcasts();
 
-    const handlePodcastUpdated = (event) => {
-      console.log('Podcast storage updated:', event.detail?.action);
+    // Set up listeners for updates - with performance optimizations
+    const storageListener = StorageService.addStorageListener(() => {
+      console.log('Storage updated - refreshing podcasts in Carousel');
+      // Only reload on collection changes (handled by the storage listener)
       loadPodcasts();
-    };
+    });
 
-    window.addEventListener(PODCAST_UPDATED_EVENT, handlePodcastUpdated);
-
-    const handleStorageChanged = (changes, area) => {
-      if (area === 'local' && changes.newUrls) {
-        console.log('Chrome storage updated with new podcast data');
+    const eventListener = StorageService.addEventListener(
+      EVENTS.PODCAST_UPDATED,
+      (event) => {
+        // Playback updates shouldn't trigger a full reload of all podcasts
+        if (event.detail?.action === 'update-playback' || event.detail?.silent) {
+          console.log('Carousel: Ignoring playback update for efficiency');
+          return;
+        }
+        
+        console.log('Podcast updated event received in Carousel:', event.detail?.action);
         loadPodcasts();
       }
-    };
-
-    chrome.storage.onChanged.addListener(handleStorageChanged);
+    );
 
     return () => {
-      window.removeEventListener(PODCAST_UPDATED_EVENT, handlePodcastUpdated);
-      chrome.storage.onChanged.removeListener(handleStorageChanged);
+      // Clean up all listeners
+      if (storageListener) storageListener();
+      if (eventListener) eventListener();
     };
   }, []);
 
@@ -95,7 +199,7 @@ const Carousel = ({ isBlurVisible, handleBlurToggle, onPodcastEnd }) => {
           {items.map(
             (podcast, index) =>
               podcast && (
-                <li key={index}>
+                <li key={podcast.key || podcast.podcastId || index}>
                   <div className="cover-container">
                     <div className="header-container">
                       <div className="header-content">
@@ -104,8 +208,8 @@ const Carousel = ({ isBlurVisible, handleBlurToggle, onPodcastEnd }) => {
                             {textTruncate(podcast.title || 'Unknown Title', 30)}
                           </h2>
                           <StatusIndicator
-                            status={podcast.PLAYBACK_STATUS}
-                            podcastId={`${podcast.title}-${podcast.episode}`}
+                            status={podcast.playbackStatus || podcast.PLAYBACK_STATUS}
+                            podcastId={podcast.key || podcast.podcastId}
                           />
                         </div>
                         <h3 className="podcast-episode">
@@ -128,12 +232,20 @@ const Carousel = ({ isBlurVisible, handleBlurToggle, onPodcastEnd }) => {
                       setExpanded={setActiveInfoCard}
                     />
                     <div className="player-container">
-                      <AudioPlayer
-                        src={podcast.mp3}
-                        podcastId={podcast.key}
-                        handleClick={handleBlurToggle}
-                        onEnded={onPodcastEnd}
-                      />
+                      {podcast.error ? (
+                        <div className="error-message">
+                          Unable to load podcast audio. Try refreshing.
+                        </div>
+                      ) : (
+                        <AudioPlayer
+                          src={podcast.mp3}
+                          podcastId={podcast.key || podcast.podcastId}
+                          title={podcast.title}
+                          podcastName={podcast.title}
+                          handleClick={handleBlurToggle}
+                          onEnded={onPodcastEnd}
+                        />
+                      )}
                     </div>
                   </div>
                 </li>

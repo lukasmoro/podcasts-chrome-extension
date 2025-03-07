@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import Recommendations from '../Newtab/Recommendations.jsx';
 import Overlay from '../Newtab/Overlay.jsx';
 import Form from '../Options/Form.jsx';
 import { ThemeProvider } from '../Newtab/ThemeProvider';
 import { usePodcastData } from '../../hooks/usePodcastData.js';
+import { StorageService, EVENTS } from '../../utils/storageService';
 import './Onboarding.css';
 import '../Options/List.css';
 import '../../root/Root.css';
@@ -11,13 +12,48 @@ import '../../root/Root.css';
 export default function Onboarding({ onPodcastAdded }) {
   const { items, handleAddPodcast } = usePodcastData();
 
-  // Create a wrapper for handleAddPodcast that also calls onPodcastAdded
-  const handleAddPodcastWithCallback = async (item) => {
-    await handleAddPodcast(item);
+  // Set up event listeners to detect when podcasts are added
+  useEffect(() => {
+    console.log('Onboarding: Setting up event listeners');
+    
+    // Listen for StorageService events
+    const storageEventListener = StorageService.addEventListener(
+      EVENTS.PODCAST_UPDATED,
+      (event) => {
+        console.log('Onboarding: Received podcast update event:', event.detail?.action);
+        if (event.detail?.action === 'add') {
+          console.log('Onboarding: Podcast added, triggering callback');
+          if (onPodcastAdded) {
+            onPodcastAdded();
+          }
+        }
+      }
+    );
+    
+    return () => {
+      if (storageEventListener) storageEventListener();
+    };
+  }, [onPodcastAdded]);
 
-    // After podcast is added, notify parent component to switch views
-    if (onPodcastAdded) {
-      onPodcastAdded();
+  // Create a wrapper for handleAddPodcast that also calls onPodcastAdded directly
+  const handleAddPodcastWithCallback = async (item) => {
+    console.log('Onboarding: Adding podcast with callback:', item.title || item.podcastName);
+    
+    try {
+      await handleAddPodcast(item);
+      console.log('Onboarding: Podcast added successfully');
+      
+      // Directly trigger callback in addition to event listeners
+      // This ensures the callback is called even if event listeners fail
+      if (onPodcastAdded) {
+        console.log('Onboarding: Directly triggering callback');
+        // Slight delay to allow storage to update
+        setTimeout(() => {
+          onPodcastAdded();
+        }, 100);
+      }
+    } catch (error) {
+      console.error('Onboarding: Error adding podcast:', error);
     }
   };
 

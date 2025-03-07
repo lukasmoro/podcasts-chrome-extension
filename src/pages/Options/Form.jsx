@@ -36,9 +36,12 @@ function Form(props) {
     console.log('Selected podcast URL:', podcast.feedUrl);
 
     props.onSubmit({
-      key: new Date().getTime(),
+      id: `podcast_${new Date().getTime()}`,
+      key: `podcast_${new Date().getTime()}`,
+      url: podcast.feedUrl,
       text: podcast.feedUrl,
       title: podcast.collectionName,
+      podcastName: podcast.collectionName,
       artwork: podcast.artworkUrl600,
       currentTime: 0,
       duration: 0,

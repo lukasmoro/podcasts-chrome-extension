@@ -7,15 +7,24 @@ function Recommendations({ podcasts, onAddPodcast }) {
       console.error('No feed URL available for this podcast');
       return;
     }
+    
+    const timestamp = Date.now();
+    const podcastId = `podcast_${timestamp}`;
+    
     const podcastItem = {
-      key: new Date().getTime(),
+      id: podcastId, 
+      key: podcastId,
+      url: podcast.feedUrl,
       text: podcast.feedUrl,
       title: podcast.collectionName,
+      podcastName: podcast.collectionName,
       artwork: podcast.artworkUrl600,
       currentTime: 0,
       duration: 0,
       playbackStatus: 'NOT_STARTED',
+      addedAt: timestamp
     };
+    
     onAddPodcast(podcastItem);
   };
 

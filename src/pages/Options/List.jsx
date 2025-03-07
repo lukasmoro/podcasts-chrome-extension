@@ -3,9 +3,8 @@ import { useSprings, animated } from '@react-spring/web';
 import { useDrag } from '@use-gesture/react';
 import clamp from 'lodash/clamp';
 import swap from 'lodash-move';
+import { EVENTS } from '../../utils/storageService';
 import './List.css';
-
-const PODCAST_UPDATED_EVENT = 'podcast-storage-updated';
 
 const List = ({
   items,
@@ -52,9 +51,9 @@ const List = ({
         api.start(fn(order.current));
       }
     };
-    window.addEventListener(PODCAST_UPDATED_EVENT, handleStorageUpdate);
+    window.addEventListener(EVENTS.PODCAST_UPDATED, handleStorageUpdate);
     return () => {
-      window.removeEventListener(PODCAST_UPDATED_EVENT, handleStorageUpdate);
+      window.removeEventListener(EVENTS.PODCAST_UPDATED, handleStorageUpdate);
     };
   }, []);
 
@@ -194,16 +193,16 @@ const List = ({
             <img
               className="podcast-item-thumbnail"
               src={items[i]?.artwork}
-              alt={items[i]?.podcastName || 'Podcast'}
+              alt={items[i]?.title || items[i]?.podcastName || 'Podcast'}
             />
             <p
               className={
-                items[i]?.podcastName?.length > 10
+                (items[i]?.title || items[i]?.podcastName || '').length > 10
                   ? 'podcast-item-title podcast-truncate-text'
                   : 'podcast-item-title'
               }
             >
-              {items[i]?.podcastName || 'Unnamed Podcast'}
+              {items[i]?.title || items[i]?.podcastName || 'Podcast'}
             </p>
             <button
               className="podcast-remove-btn"

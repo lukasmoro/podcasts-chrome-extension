@@ -4,10 +4,10 @@ import Carousel from './Carousel';
 import Overlay from './Overlay.jsx';
 import Onboarding from '../Panel/Onboarding.jsx';
 import Redirect from './Redirect';
+import { StorageService, EVENTS } from '../../utils/storageService';
 import '../../root/Root.css';
 
-// Import the same event constant used in usePodcastStorage
-const PODCAST_UPDATED_EVENT = 'podcast-storage-updated';
+// Use central event constants from storageService
 
 const Newtab = () => {
   const [onboarding, setOnboarding] = useState(false);
@@ -15,69 +15,91 @@ const Newtab = () => {
   const [isBlurVisible, setIsBlurVisible] = useState(false);
 
   useEffect(() => {
+    console.log('Newtab: Checking tab status for redirect...');
     chrome.tabs.query({ currentWindow: true }, function (tabs) {
+      let shouldRedirect = false;
+      
       for (let i = 0; i < tabs.length - 1; i++) {
         let tab = tabs[i];
         if (
           tab.pendingUrl === 'chrome://newtab/' ||
           tab.url === 'chrome://newtab/'
         ) {
-          setRedirect(true);
-        } else {
-          setRedirect(false);
+          console.log('Newtab: Found another newtab, should redirect');
+          shouldRedirect = true;
+          break;
         }
       }
+      
+      setRedirect(shouldRedirect);
     });
-  });
+  }, []); // Add empty dependency array to run only once
 
   // Check if podcasts exist in storage
-  const checkForPodcasts = () => {
-    chrome.storage.local.get(['newUrls'], (item) => {
-      if (item.newUrls && item.newUrls.length > 0) {
+  const checkForPodcasts = async () => {
+    console.log('Newtab: Checking for podcasts...');
+    try {
+      // Use the StorageService to get all podcasts
+      const podcasts = await StorageService.getAllPodcasts();
+      console.log('Newtab: Found', podcasts.length, 'podcasts');
+      
+      if (podcasts && podcasts.length > 0) {
+        console.log('Newtab: Podcasts found, disabling onboarding');
         setOnboarding(false);
       } else {
+        console.log('Newtab: No podcasts found, enabling onboarding');
         setOnboarding(true);
       }
-    });
+    } catch (error) {
+      console.error('Newtab: Error checking for podcasts:', error);
+      setOnboarding(true);
+    }
   };
 
   // Initial check
   useEffect(() => {
+    console.log('Newtab: Initial podcasts check');
     checkForPodcasts();
 
-    // Listen for podcast updates to automatically switch to Carousel
-    const handlePodcastUpdated = (event) => {
-      console.log('Podcast storage updated in Newtab:', event.detail?.action);
-
-      // If a podcast was added and we're in onboarding, switch to carousel
-      if (event.detail?.action === 'add' && onboarding) {
-        checkForPodcasts();
+    // Set up event listeners for updates - but only for collection changes, not playback
+    const storageListener = StorageService.addStorageListener((newPodcasts) => {
+      console.log('Newtab: Storage updated, podcasts count:', newPodcasts?.length);
+      
+      // Only update onboarding state if needed - avoid unnecessary re-renders
+      if (newPodcasts && newPodcasts.length > 0 && onboarding) {
+        console.log('Newtab: Podcasts exist, disabling onboarding');
+        setOnboarding(false);
+      } else if ((!newPodcasts || newPodcasts.length === 0) && !onboarding) {
+        console.log('Newtab: No podcasts exist, enabling onboarding');
+        setOnboarding(true);
       }
-    };
+    });
 
-    // Listen for both custom event and Chrome storage changes
-    window.addEventListener(PODCAST_UPDATED_EVENT, handlePodcastUpdated);
-
-    const handleStorageChanged = (changes, area) => {
-      if (area === 'local' && changes.newUrls) {
-        const newValue = changes.newUrls.newValue || [];
-
-        // Switch to Carousel if podcasts exist and we're in onboarding
-        if (newValue.length > 0 && onboarding) {
-          setOnboarding(false);
+    // Listen for new storage service events - but filter playback updates
+    const newEventListener = StorageService.addEventListener(
+      EVENTS.PODCAST_UPDATED,
+      (event) => {
+        // Skip handling playback updates which happen frequently
+        // and shouldn't affect the high-level UI state
+        if (event.detail?.action === 'update-playback') {
+          return;
         }
-        // Switch to Onboarding if no podcasts exist and we're not in onboarding
-        else if (newValue.length === 0 && !onboarding) {
+        
+        console.log('Newtab: Podcast updated event:', event.detail?.action);
+        
+        if (event.detail?.action === 'add' && onboarding) {
+          console.log('Newtab: Podcast added, checking storage...');
+          checkForPodcasts();
+        } else if (event.detail?.action === 'remove' && event.detail?.remainingCount === 0) {
+          console.log('Newtab: All podcasts removed, enabling onboarding');
           setOnboarding(true);
         }
       }
-    };
-
-    chrome.storage.onChanged.addListener(handleStorageChanged);
+    );
 
     return () => {
-      window.removeEventListener(PODCAST_UPDATED_EVENT, handlePodcastUpdated);
-      chrome.storage.onChanged.removeListener(handleStorageChanged);
+      if (storageListener) storageListener();
+      if (newEventListener) newEventListener();
     };
   }, [onboarding]);
 

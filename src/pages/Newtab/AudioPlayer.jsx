@@ -10,13 +10,13 @@ import { PauseIcon } from '../Icons/PauseIcon';
 import { trackButtonClick } from '../../utils/googleAnalytics';
 
 const AudioPlayer = (props) => {
-  // audioplayer states
+  // AudioPlayer local state
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // usePodcastPlayback hook
+  // Hook for playback state management
   const {
     currentTime: savedTime,
     duration: savedDuration,
@@ -26,23 +26,23 @@ const AudioPlayer = (props) => {
     wasFinished,
   } = usePodcastPlayback(props.podcastId);
 
-  //usePodastData hook
+  // Hook for podcast collection management
   const { handleUpdatePlayback } = usePodcastData();
 
-  // audioplayer refs
+  // Refs for DOM elements and tracking
   const audioPlayer = useRef();
   const progressBar = useRef();
-  const animationRef = useRef();
+  // Removed unused animationRef
   const lastUpdateTimeRef = useRef(0);
 
-  // useSpring config for animation
+  // Spring animation for player controls
   const [springs, api] = useSpring(() => ({
     from: { opacity: 0, y: 0 },
     to: { opacity: isPlaying ? 1 : 0, y: isPlaying ? 50 : 0 },
     config: { tension: 280, friction: 60 },
   }));
 
-  // initialise audioplayer through usePodcastPlayback hook on mount or data change
+  // Initialize player with saved playback state
   useEffect(() => {
     if (!isInitialized && audioPlayer.current) {
       const timeToSet = status === PLAYBACK_STATUS.FINISHED ? 0 : savedTime;
@@ -68,7 +68,7 @@ const AudioPlayer = (props) => {
     }
   }, [savedTime, savedDuration, isInitialized, status, PLAYBACK_STATUS]);
 
-  // handle metaData from audiofile to update audioplayer on mount (duration, percentage seek before width)
+  // Handle audio metadata loading
   useEffect(() => {
     const audio = audioPlayer.current;
     if (!audio) return;
@@ -116,9 +116,9 @@ const AudioPlayer = (props) => {
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
-  }, [savedTime, isInitialized]);
+  }, [savedTime, isInitialized, status, PLAYBACK_STATUS]);
 
-  // continuously update audioplayer ui through metaData from audiofile (duration, percentage seek before width)
+  // Handle continuous playback updates
   useEffect(() => {
     const audio = audioPlayer.current;
     if (!audio) return;
@@ -149,16 +149,18 @@ const AudioPlayer = (props) => {
         );
       }
 
+      // Update storage much less frequently during playback - every 5 seconds is sufficient
+      // The storage service also has additional debouncing for these updates
       const now = Date.now();
-
-      if (now - lastUpdateTimeRef.current > 1000) {
+      if (now - lastUpdateTimeRef.current > 5000) {  // Increased from 1s to 5s
         lastUpdateTimeRef.current = now;
-        updatePlaybackState(currentValue, audioDuration);
-        handleUpdatePlayback(props.podcastId, {
-          currentTime: currentValue,
-          duration: audioDuration,
-          status: currentValue >= audioDuration ? 'FINISHED' : 'IN_PROGRESS',
-        });
+        
+        // Only update if playing and not already finished
+        if (isPlaying && status !== PLAYBACK_STATUS.FINISHED) {
+          // Use only one update method during regular playback
+          // The storage service will handle both storage locations and additional debouncing
+          updatePlaybackState(currentValue, audioDuration);
+        }
       }
     };
 
@@ -166,10 +168,11 @@ const AudioPlayer = (props) => {
 
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
+      lastUpdateTimeRef.current = 0; // Reset this ref on cleanup
     };
-  }, [updatePlaybackState, handleUpdatePlayback, props.podcastId]);
+  }, [updatePlaybackState, props.podcastId, isPlaying, status, PLAYBACK_STATUS]);
 
-  // handle pause/play events, duration change by user & audio completed
+  // Handle play/pause/ended events
   useEffect(() => {
     const audio = audioPlayer.current;
     if (!audio) return;
@@ -182,11 +185,11 @@ const AudioPlayer = (props) => {
           opacity: 1,
           y: 50,
         },
-      });
+      }).catch(err => console.error('Animation error:', err));
 
       trackButtonClick('audio_play', {
         podcast_id: props.podcastId,
-        podcast_title: props.title || 'Unknown',
+        podcast_title: props.title || props.podcastName || 'Unknown',
         playback_position: audio.currentTime,
       }).catch((err) => console.error('Error tracking play event:', err));
     };
@@ -199,21 +202,18 @@ const AudioPlayer = (props) => {
           opacity: 0,
           y: 0,
         },
-      });
+      }).catch(err => console.error('Animation error:', err));
 
       if (audio.currentTime && audio.duration) {
+        // Use only the primary update method for important state changes
+        // This will coordinate storage updates and event broadcasting
+        const status = audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS';
         updatePlaybackState(audio.currentTime, audio.duration);
-        handleUpdatePlayback(props.podcastId, {
-          currentTime: audio.currentTime,
-          duration: audio.duration,
-          status:
-            audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS',
-        });
       }
 
       trackButtonClick('audio_pause', {
         podcast_id: props.podcastId,
-        podcast_title: props.title || 'Unknown',
+        podcast_title: props.title || props.podcastName || 'Unknown',
         playback_position: audio.currentTime,
         duration_played: audio.currentTime,
       }).catch((err) => console.error('Error tracking pause event:', err));
@@ -227,21 +227,18 @@ const AudioPlayer = (props) => {
           opacity: 0,
           y: 0,
         },
-      });
+      }).catch(err => console.error('Animation error:', err));
 
-      if (audio.duration) {
+      // Add a check to prevent duplicate finished state updates
+      if (audio.duration && status !== PLAYBACK_STATUS.FINISHED) {
+        // Use only the primary update method for the finished state
+        // This is an important state change that should be persisted immediately
         updatePlaybackState(audio.duration, audio.duration);
-        handleUpdatePlayback(props.podcastId, {
-          currentTime: audio.currentTime,
-          duration: audio.duration,
-          status:
-            audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS',
-        });
       }
 
       trackButtonClick('audio_completed', {
         podcast_id: props.podcastId,
-        podcast_title: props.title || 'Unknown',
+        podcast_title: props.title || props.podcastName || 'Unknown',
         duration: audio.duration,
       }).catch((err) => console.error('Error tracking completion event:', err));
 
@@ -271,40 +268,42 @@ const AudioPlayer = (props) => {
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('durationchange', handleDurationChange);
 
+      // Save current state on unmount
       if (audio.currentTime && audio.duration) {
+        // Use only one update method to prevent duplicate updates
+        const status = audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS';
         updatePlaybackState(audio.currentTime, audio.duration);
-        handleUpdatePlayback(props.podcastId, {
-          currentTime: audio.currentTime,
-          duration: audio.duration,
-          status:
-            audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS',
-        });
       }
     };
   }, [
     updatePlaybackState,
-    handleUpdatePlayback,
     props.onEnded,
     api,
     props.podcastId,
     props.title,
+    status,
+    PLAYBACK_STATUS,
   ]);
 
+  // Play/pause toggle handler
   const togglePlayPause = () => {
     if (!audioPlayer.current) return;
 
     if (!isPlaying) {
       audioPlayer.current.play().catch((err) => {
         console.error('Error playing audio:', err);
-        trackError(err).catch((trackErr) =>
-          console.error('Error tracking error event:', trackErr)
-        );
+        if (typeof trackError === 'function') {
+          trackError(err).catch((trackErr) =>
+            console.error('Error tracking error event:', trackErr)
+          );
+        }
       });
     } else {
       audioPlayer.current.pause();
     }
   };
 
+  // Progress bar change handler
   const changeRange = () => {
     if (!audioPlayer.current || !progressBar.current) return;
 
@@ -312,7 +311,6 @@ const AudioPlayer = (props) => {
     if (isNaN(newTime)) return;
 
     audioPlayer.current.currentTime = newTime;
-
     setCurrentTime(newTime);
 
     if (audioPlayer.current.duration && progressBar.current) {
@@ -324,18 +322,14 @@ const AudioPlayer = (props) => {
     }
 
     if (audioPlayer.current.duration) {
+      // User-initiated seek - this is an important playback event that should be persisted promptly
+      const status = newTime >= audioPlayer.current.duration ? 'FINISHED' : 'IN_PROGRESS';
       updatePlaybackState(newTime, audioPlayer.current.duration);
-      handleUpdatePlayback(props.podcastId, {
-        currentTime: newTime,
-        duration: audioPlayer.current.duration,
-        status:
-          newTime >= audioPlayer.current.duration ? 'FINISHED' : 'IN_PROGRESS',
-      });
     }
 
     trackButtonClick('audio_seek', {
       podcast_id: props.podcastId,
-      podcast_title: props.title || 'Unknown',
+      podcast_title: props.title || props.podcastName || 'Unknown',
       seek_position: newTime,
       seek_percentage: audioPlayer.current.duration
         ? Math.round((newTime / audioPlayer.current.duration) * 100)
@@ -343,6 +337,7 @@ const AudioPlayer = (props) => {
     }).catch((err) => console.error('Error tracking seek event:', err));
   };
 
+  // Format time display
   const calculateTime = (secs) => {
     if (!isFinite(secs) || secs < 0) return '00:00';
     const timeInSeconds = Number(secs);

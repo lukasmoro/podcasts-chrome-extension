@@ -1,144 +1,183 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { StorageService, EVENTS } from '../utils/storageService';
+import { parseRss } from '../utils/rssParser';
 
-// broadcasted events
-const PODCAST_UPDATED_EVENT = 'podcast-storage-updated';
-
-const storageUpdateNotification = (detail = {}) => {
-  const event = new CustomEvent(PODCAST_UPDATED_EVENT, { detail });
-  window.dispatchEvent(event);
-};
-
-// usePodcastData hook
+// usePodcastData hook - uses the centralized StorageService
 export const usePodcastData = () => {
-  // item states
+  // State for podcast collection
   const [items, setItems] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const isReorderingRef = useRef(false);
   const lastReorderSignatureRef = useRef(null);
   const initiatedUpdateRef = useRef(false);
 
-  // debugging function
+  // Debugging function with filtered logging for playback updates
   const logPodcastChange = (action, data) => {
-    console.log(`[PodcastData] ${action}:`, data);
+    // Skip logging playback updates to avoid console flooding
+    if (action === 'Playback updated') {
+      // Only log important playback events like finished
+      if (data.playbackData && data.playbackData.status !== 'IN_PROGRESS') {
+        console.log(`[PodcastData] ${action}:`, data);
+      }
+    } else {
+      // Log all other events normally
+      console.log(`[PodcastData] ${action}:`, data);
+    }
   };
 
-  // data structure storage, init & listeners
+  // Load podcasts and set up listeners
   useEffect(() => {
-    const loadPodcasts = () => {
-      chrome.storage.local.get(['newUrls'], (item) => {
-        const existingItems = item.newUrls || [];
-        const feedItems = existingItems.map((feedItem) => ({
-          key: feedItem.key,
-          text: feedItem.text,
-          podcastName: feedItem.podcastName,
-          artwork: feedItem.artwork || feedItem.artworkUrl,
-          currentTime: feedItem.currentTime || 0,
-          duration: feedItem.duration || 0,
-          playbackStatus: feedItem.playbackStatus || 'NOT_STARTED',
-        }));
-        setItems(feedItems);
-        setIsLoaded(true);
-        logPodcastChange('Loaded podcasts', feedItems);
-      });
-    };
-
+    console.log('usePodcastData: initializing...');
+    
+    // Load podcasts from storage
     loadPodcasts();
 
-    const storageChangeHandler = (changes, area) => {
-      if (area === 'local' && changes.newUrls && !initiatedUpdateRef.current) {
-        logPodcastChange('Storage changed externally', changes.newUrls);
-        loadPodcasts();
-      }
-      initiatedUpdateRef.current = false;
-    };
+    function loadPodcasts() {
+      console.log('usePodcastData: loading podcasts...');
+      StorageService.getAllPodcasts().then(podcasts => {
+        console.log('usePodcastData: podcasts loaded:', podcasts.length);
+        setItems(podcasts);
+        setIsLoaded(true);
+        logPodcastChange('Loaded podcasts', podcasts);
+      });
+    }
 
-    const customEventHandler = (event) => {
+    // Set up storage change listener - only for podcast collection changes
+    const removeStorageListener = StorageService.addStorageListener((newPodcasts) => {
+      console.log('usePodcastData: storage updated', initiatedUpdateRef.current);
       if (!initiatedUpdateRef.current) {
-        logPodcastChange('Custom event received', event.detail);
+        console.log('usePodcastData: reloading after storage change');
         loadPodcasts();
       }
       initiatedUpdateRef.current = false;
-    };
+    });
 
-    chrome.storage.onChanged.addListener(storageChangeHandler);
-    window.addEventListener(PODCAST_UPDATED_EVENT, customEventHandler);
+    // Set up custom event listener - with optimizations for playback updates
+    const removeEventListener = StorageService.addEventListener(
+      EVENTS.PODCAST_UPDATED,
+      (event) => {
+        // Skip collection refresh on playback updates
+        // These should be handled by usePodcastPlayback instead
+        if (event.detail?.action === 'update-playback' || event.detail?.silent) {
+          return;
+        }
+        
+        console.log(
+          'usePodcastData: podcast event received', 
+          event.detail?.action, 
+          initiatedUpdateRef.current
+        );
+        
+        if (!initiatedUpdateRef.current) {
+          console.log('usePodcastData: reloading after podcast event');
+          loadPodcasts();
+        }
+        initiatedUpdateRef.current = false;
+      }
+    );
 
     return () => {
-      chrome.storage.onChanged.removeListener(storageChangeHandler);
-      window.removeEventListener(PODCAST_UPDATED_EVENT, customEventHandler);
+      removeStorageListener();
+      removeEventListener();
     };
   }, []);
 
-  // adding podcast data item to storage with callback function
+  // Add a new podcast
   const handleAddPodcast = useCallback(
     async (item) => {
-      const urlChecker = (url) => url.text !== item.text;
-      let check = items.every(urlChecker);
+      // Validations
+      if (items.length > 4) {
+        alert('Maximum number of podcasts reached (5)');
+        return;
+      }
 
-      if (
-        items.length > 4 ||
-        !check ||
-        !/(http|ftp|https):\/\/[\w-]+(\.[\w-]+)+([\w.,@?^=%&amp;:\/~+#-]*[\w@?^=%&amp;\/~+#-])?/.test(
-          item.text
-        )
-      ) {
+      const urlExists = items.some(podcast => 
+        podcast.url === item.text || podcast.url === item.url);
+      
+      if (urlExists) {
         alert('This podcast has already been added! 👀');
+        return;
+      }
+      
+      const urlPattern = /(http|ftp|https):\/\/[\w-]+(\.[\w-]+)+([\w.,@?^=%&amp;:\/~+#-]*[\w@?^=%&amp;\/~+#-])?/;
+      const url = item.text || item.url;
+      
+      if (!urlPattern.test(url)) {
+        alert('Please enter a valid URL');
         return;
       }
 
       try {
-        const response = await fetch(item.text);
+        // Fetch and parse the RSS feed
+        const response = await fetch(url);
         const text = await response.text();
+        
+        // Use the DOMParser for basic extraction and full parseRss for details
         const parser = new DOMParser();
         const xml = parser.parseFromString(text, 'text/xml');
-        const podcastName =
-          xml.querySelector('channel > title')?.textContent ||
-          'Unnamed Podcast';
-        const newItem = {
-          ...item,
-          podcastName,
-          artwork: item.artwork,
+        const podcastName = xml.querySelector('channel > title')?.textContent || 'Unnamed Podcast';
+        
+        // Get additional podcast details from the RSS parser
+        const rssData = parseRss(text) || {};
+        
+        // Create a new podcast item
+        const podcastId = item.key || `podcast_${Date.now()}`;
+        const newPodcastData = {
+          id: podcastId,
+          key: podcastId, // For backward compatibility
+          url: url,
+          text: url, // For backward compatibility
+          title: podcastName,
+          podcastName: podcastName, // For backward compatibility
+          artwork: item.artwork || rssData.image,
+          author: rssData.author,
+          publisher: rssData.publisher,
+          category: rssData.category,
+          description: rssData.description,
           currentTime: 0,
           duration: 0,
           playbackStatus: 'NOT_STARTED',
         };
-        const newUrls = [newItem, ...items];
+        
+        // Store the podcast using the storage service
         initiatedUpdateRef.current = true;
-
-        setItems(newUrls);
-
-        chrome.storage.local.set({ newUrls }, () => {
-          logPodcastChange('Podcast added', newItem);
-          storageUpdateNotification({ action: 'add', item: newItem });
-        });
+        await StorageService.addPodcast(newPodcastData);
+        
+        // Update local state
+        const updatedPodcasts = await StorageService.getAllPodcasts();
+        setItems(updatedPodcasts);
+        
+        logPodcastChange('Podcast added', newPodcastData);
       } catch (error) {
-        console.error('Error fetching podcast feed:', error);
-        alert(
-          'Error fetching podcast feed. Please check the URL and try again.'
-        );
+        console.error('Error adding podcast:', error);
+        alert('Error adding podcast. Please check the URL and try again.');
       }
     },
     [items]
   );
 
-  // removing podcast data item from storage with callback function
+  // Remove a podcast
   const handleRemovePodcast = useCallback(
-    (key) => {
-      const newUrls = items.filter((item) => item.key !== key);
-      initiatedUpdateRef.current = true;
-      setItems(newUrls);
-
-      chrome.storage.local.set({ newUrls }, () => {
-        logPodcastChange('Podcast removed', key);
-        storageUpdateNotification({ action: 'remove', key });
-      });
+    async (id) => {
+      try {
+        initiatedUpdateRef.current = true;
+        await StorageService.removePodcast(id);
+        
+        // Update local state
+        const updatedPodcasts = await StorageService.getAllPodcasts();
+        setItems(updatedPodcasts);
+        
+        logPodcastChange('Podcast removed', id);
+      } catch (error) {
+        console.error('Error removing podcast:', error);
+      }
     },
-    [items]
+    []
   );
 
-  // reordering podcast data item from storage with callback function
+  // Reorder podcasts
   const handleReorderPodcasts = useCallback(
-    (sourceIndex, destinationIndex) => {
+    async (sourceIndex, destinationIndex) => {
       const reorderSignature = `${sourceIndex}-${destinationIndex}`;
 
       if (
@@ -148,72 +187,81 @@ export const usePodcastData = () => {
         return;
       }
 
-      isReorderingRef.current = true;
-      lastReorderSignatureRef.current = reorderSignature;
-      const reorderedItems = Array.from(items);
-      const [movedItem] = reorderedItems.splice(sourceIndex, 1);
-      reorderedItems.splice(destinationIndex, 0, movedItem);
-      initiatedUpdateRef.current = true;
-      setItems(reorderedItems);
-
-      chrome.storage.local.set({ newUrls: reorderedItems }, () => {
-        logPodcastChange('Podcasts reordered', {
-          sourceIndex,
-          destinationIndex,
-        });
-        storageUpdateNotification({
-          action: 'reorder',
-          sourceIndex,
-          destinationIndex,
-        });
+      try {
+        isReorderingRef.current = true;
+        lastReorderSignatureRef.current = reorderSignature;
+        initiatedUpdateRef.current = true;
+        
+        await StorageService.reorderPodcasts(sourceIndex, destinationIndex);
+        
+        // Update local state
+        const reorderedPodcasts = await StorageService.getAllPodcasts();
+        setItems(reorderedPodcasts);
+        
+        logPodcastChange('Podcasts reordered', { sourceIndex, destinationIndex });
         isReorderingRef.current = false;
-      });
+      } catch (error) {
+        console.error('Error reordering podcasts:', error);
+        isReorderingRef.current = false;
+      }
     },
-    [items]
+    []
   );
 
-  // adding playback data to podcast data item to storage with callback function
+  // Update podcast playback state
+  // Track updates to avoid excessive storage operations
+  const lastPlaybackUpdatesRef = useRef({});
+
   const handleUpdatePlayback = useCallback(
-    (key, playbackData) => {
-      console.log(
-        `[PodcastData] Attempting to update podcast with key: ${key}`
-      );
-      console.log(`[PodcastData] Current items:`, items);
-
-      const podcastIndex = items.findIndex((item) => item.key === key);
-
-      if (podcastIndex === -1) {
-        console.error(`[PodcastData] No podcast found with key: ${key}`);
-        return;
+    async (id, playbackData) => {
+      try {
+        // Only log non-progress updates to reduce console spam
+        if (playbackData.status !== 'IN_PROGRESS') {
+          console.log(`[PodcastData] Updating playback for podcast: ${id}`, playbackData);
+        }
+        
+        // Skip redundant updates with same values
+        const lastUpdate = lastPlaybackUpdatesRef.current[id];
+        const isSameUpdate = lastUpdate && 
+          lastUpdate.currentTime === playbackData.currentTime &&
+          lastUpdate.status === playbackData.status;
+          
+        if (isSameUpdate) {
+          return; // Skip duplicate update
+        }
+        
+        // Store this update for future comparison
+        lastPlaybackUpdatesRef.current[id] = {
+          currentTime: playbackData.currentTime,
+          status: playbackData.status,
+          timestamp: Date.now()
+        };
+        
+        // Mark as initiated by this component
+        initiatedUpdateRef.current = true;
+        
+        // Use the StorageService which already has debouncing for IN_PROGRESS updates
+        await StorageService.updatePlayback(id, playbackData);
+        
+        // Only update local state for significant changes (not for regular progress)
+        // This prevents unnecessary re-renders during normal playback
+        if (playbackData.status !== 'IN_PROGRESS') {
+          const updatedPodcasts = await StorageService.getAllPodcasts();
+          setItems(updatedPodcasts);
+        }
+        
+        // Log is managed by the logPodcastChange function which filters progress updates
+        logPodcastChange('Playback updated', { id, playbackData });
+      } catch (error) {
+        console.error(`Error updating playback for podcast ${id}:`, error);
       }
-
-      const updatedItems = [...items];
-      const podcast = { ...updatedItems[podcastIndex] };
-      podcast.currentTime = playbackData.currentTime;
-      podcast.duration = playbackData.duration;
-      podcast.playbackStatus = playbackData.status;
-      updatedItems[podcastIndex] = podcast;
-      initiatedUpdateRef.current = true;
-      setItems(updatedItems);
-
-      console.log(`[PodcastData] About to save updated podcast:`, podcast);
-
-      chrome.storage.local.set({ newUrls: updatedItems }, () => {
-        logPodcastChange('Playback updated', { key, playbackData });
-        storageUpdateNotification({
-          action: 'update-playback',
-          key,
-          playbackData,
-        });
-      });
     },
-    [items]
+    []
   );
 
   return {
     items,
     isLoaded,
-    setItems,
     handleAddPodcast,
     handleRemovePodcast,
     handleReorderPodcasts,
