@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+// broadcasted events
 const PODCAST_UPDATED_EVENT = 'podcast-storage-updated';
 
 const storageUpdateNotification = (detail = {}) => {
@@ -7,13 +8,16 @@ const storageUpdateNotification = (detail = {}) => {
   window.dispatchEvent(event);
 };
 
+// hook
 export const usePodcastData = () => {
+  // item states
   const [items, setItems] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const isReorderingRef = useRef(false);
   const lastReorderSignatureRef = useRef(null);
   const initiatedUpdateRef = useRef(false);
 
+  // data structure storage, init & listeners
   useEffect(() => {
     const loadPodcasts = () => {
       chrome.storage.local.get(['newUrls'], (item) => {
@@ -23,6 +27,9 @@ export const usePodcastData = () => {
           text: feedItem.text,
           podcastName: feedItem.podcastName,
           artwork: feedItem.artwork || feedItem.artworkUrl,
+          currentTime: feedItem.currentTime || 0,
+          duration: feedItem.duration || 0,
+          playbackStatus: feedItem.playbackStatus || 'NOT_STARTED',
         }));
         setItems(feedItems);
         setIsLoaded(true);
@@ -54,6 +61,7 @@ export const usePodcastData = () => {
     };
   }, []);
 
+  // adding podcast data item to storage with callback function
   const handleAddPodcast = useCallback(
     async (item) => {
       const urlChecker = (url) => url.text !== item.text;
@@ -78,7 +86,14 @@ export const usePodcastData = () => {
         const podcastName =
           xml.querySelector('channel > title')?.textContent ||
           'Unnamed Podcast';
-        const newItem = { ...item, podcastName, artwork: item.artwork };
+        const newItem = {
+          ...item,
+          podcastName,
+          artwork: item.artwork,
+          currentTime: 0,
+          duration: 0,
+          playbackStatus: 'NOT_STARTED',
+        };
         const newUrls = [newItem, ...items];
         initiatedUpdateRef.current = true;
 
@@ -98,6 +113,7 @@ export const usePodcastData = () => {
     [items]
   );
 
+  // removing podcast data item from storage with callback function
   const handleRemovePodcast = useCallback(
     (key) => {
       const newUrls = items.filter((item) => item.key !== key);
@@ -111,6 +127,7 @@ export const usePodcastData = () => {
     [items]
   );
 
+  // reordering podcast data item from storage with callback function
   const handleReorderPodcasts = useCallback(
     (sourceIndex, destinationIndex) => {
       const reorderSignature = `${sourceIndex}-${destinationIndex}`;
@@ -136,25 +153,41 @@ export const usePodcastData = () => {
           sourceIndex,
           destinationIndex,
         });
-
         isReorderingRef.current = false;
       });
     },
     [items]
   );
 
-  const refreshFromStorage = useCallback(() => {
-    chrome.storage.local.get(['newUrls'], (item) => {
-      const existingItems = item.newUrls || [];
-      const feedItems = existingItems.map((feedItem) => ({
-        key: feedItem.key,
-        text: feedItem.text,
-        podcastName: feedItem.podcastName,
-        artwork: feedItem.artwork || feedItem.artworkUrl,
-      }));
-      setItems(feedItems);
-    });
-  }, []);
+  // adding playback data to podcast data item to storage with callback function
+  const handleUpdatePlayback = useCallback(
+    (key, playbackData) => {
+      const podcastIndex = items.findIndex((item) => item.key === key);
+
+      if (podcastIndex === -1) return;
+
+      const updatedItems = [...items];
+      const podcast = { ...updatedItems[podcastIndex] };
+
+      podcast.currentTime = playbackData.currentTime;
+      podcast.duration = playbackData.duration;
+      podcast.playbackStatus = playbackData.status;
+
+      updatedItems[podcastIndex] = podcast;
+
+      initiatedUpdateRef.current = true;
+      setItems(updatedItems);
+
+      chrome.storage.local.set({ newUrls: updatedItems }, () => {
+        storageUpdateNotification({
+          action: 'update-playback',
+          key,
+          playbackData,
+        });
+      });
+    },
+    [items]
+  );
 
   return {
     items,
@@ -163,6 +196,6 @@ export const usePodcastData = () => {
     handleAddPodcast,
     handleRemovePodcast,
     handleReorderPodcasts,
-    refreshFromStorage,
+    handleUpdatePlayback,
   };
 };
