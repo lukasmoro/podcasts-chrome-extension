@@ -8,7 +8,7 @@ const storageUpdateNotification = (detail = {}) => {
   window.dispatchEvent(event);
 };
 
-// hook
+// usePodcastData hook
 export const usePodcastData = () => {
   // item states
   const [items, setItems] = useState([]);
@@ -16,6 +16,11 @@ export const usePodcastData = () => {
   const isReorderingRef = useRef(false);
   const lastReorderSignatureRef = useRef(null);
   const initiatedUpdateRef = useRef(false);
+
+  // debugging function
+  const logPodcastChange = (action, data) => {
+    console.log(`[PodcastData] ${action}:`, data);
+  };
 
   // data structure storage, init & listeners
   useEffect(() => {
@@ -33,6 +38,7 @@ export const usePodcastData = () => {
         }));
         setItems(feedItems);
         setIsLoaded(true);
+        logPodcastChange('Loaded podcasts', feedItems);
       });
     };
 
@@ -40,6 +46,7 @@ export const usePodcastData = () => {
 
     const storageChangeHandler = (changes, area) => {
       if (area === 'local' && changes.newUrls && !initiatedUpdateRef.current) {
+        logPodcastChange('Storage changed externally', changes.newUrls);
         loadPodcasts();
       }
       initiatedUpdateRef.current = false;
@@ -47,6 +54,7 @@ export const usePodcastData = () => {
 
     const customEventHandler = () => {
       if (!initiatedUpdateRef.current) {
+        logPodcastChange('Custom event received', event.detail);
         loadPodcasts();
       }
       initiatedUpdateRef.current = false;

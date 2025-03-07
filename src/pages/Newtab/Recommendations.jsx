@@ -12,6 +12,9 @@ function Recommendations({ podcasts, onAddPodcast }) {
       text: podcast.feedUrl,
       title: podcast.collectionName,
       artwork: podcast.artworkUrl600,
+      currentTime: 0,
+      duration: 0,
+      playbackStatus: 'NOT_STARTED',
     };
     onAddPodcast(podcastItem);
   };

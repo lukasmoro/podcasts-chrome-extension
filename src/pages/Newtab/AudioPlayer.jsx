@@ -4,17 +4,19 @@ import { useSpring } from '@react-spring/core';
 import './AudioPlayer.css';
 import BehaviourClick from './BehaviourClick.jsx';
 import usePodcastPlayback from '../../hooks/usePodcastPlayback.js';
+import { usePodcastData } from '../../hooks/usePodcastData.js';
 import { PlayIcon } from '../Icons/PlayIcon';
 import { PauseIcon } from '../Icons/PauseIcon';
-// Import Google Analytics tracking functions
 import { trackButtonClick } from '../../utils/googleAnalytics';
 
 const AudioPlayer = (props) => {
+  // audioplayer states
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // usePodcastPlayback hook
   const {
     currentTime: savedTime,
     duration: savedDuration,
@@ -24,17 +26,23 @@ const AudioPlayer = (props) => {
     wasFinished,
   } = usePodcastPlayback(props.podcastId);
 
+  //usePodastData hook
+  const { handleUpdatePlayback } = usePodcastData();
+
+  // audioplayer refs
   const audioPlayer = useRef();
   const progressBar = useRef();
   const animationRef = useRef();
   const lastUpdateTimeRef = useRef(0);
 
+  // useSpring config for animation
   const [springs, api] = useSpring(() => ({
     from: { opacity: 0, y: 0 },
     to: { opacity: isPlaying ? 1 : 0, y: isPlaying ? 50 : 0 },
     config: { tension: 280, friction: 60 },
   }));
 
+  // initialise audioplayer through usePodcastPlayback hook on mount or data change
   useEffect(() => {
     if (!isInitialized && audioPlayer.current) {
       const timeToSet = status === PLAYBACK_STATUS.FINISHED ? 0 : savedTime;
@@ -60,15 +68,14 @@ const AudioPlayer = (props) => {
     }
   }, [savedTime, savedDuration, isInitialized, status, PLAYBACK_STATUS]);
 
+  // handle metaData from audiofile to update audioplayer on mount (duration, percentage seek before width)
   useEffect(() => {
     const audio = audioPlayer.current;
     if (!audio) return;
 
     const handleLoadedMetadata = () => {
       const audioDuration = audio.duration;
-
       if (isNaN(audioDuration) || !isFinite(audioDuration)) return;
-
       setDuration(audioDuration);
 
       if (progressBar.current) {
@@ -96,25 +103,22 @@ const AudioPlayer = (props) => {
             `${percentage}%`
           );
         }
-
         setCurrentTime(savedTime);
         setIsInitialized(true);
       } else if (!isInitialized) {
         setIsInitialized(true);
       }
     };
-
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-
     if (audio.readyState >= 2) {
       handleLoadedMetadata();
     }
-
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
   }, [savedTime, isInitialized]);
 
+  // continuously update audioplayer ui through metaData from audiofile (duration, percentage seek before width)
   useEffect(() => {
     const audio = audioPlayer.current;
     if (!audio) return;
@@ -159,6 +163,7 @@ const AudioPlayer = (props) => {
     };
   }, [updatePlaybackState]);
 
+  // handle pause/play events, duration change by user & audio completed
   useEffect(() => {
     const audio = audioPlayer.current;
     if (!audio) return;
@@ -192,9 +197,14 @@ const AudioPlayer = (props) => {
 
       if (audio.currentTime && audio.duration) {
         updatePlaybackState(audio.currentTime, audio.duration);
+        handleUpdatePlayback(props.podcastId, {
+          currentTime: audio.currentTime,
+          duration: audio.duration,
+          status:
+            audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS',
+        });
       }
 
-      // Track pause event with Google Analytics
       trackButtonClick('audio_pause', {
         podcast_id: props.podcastId,
         podcast_title: props.title || 'Unknown',
@@ -215,9 +225,14 @@ const AudioPlayer = (props) => {
 
       if (audio.duration) {
         updatePlaybackState(audio.duration, audio.duration);
+        handleUpdatePlayback(props.podcastId, {
+          currentTime: audio.currentTime,
+          duration: audio.duration,
+          status:
+            audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS',
+        });
       }
 
-      // Track podcast completion with Google Analytics
       trackButtonClick('audio_completed', {
         podcast_id: props.podcastId,
         podcast_title: props.title || 'Unknown',
@@ -293,7 +308,6 @@ const AudioPlayer = (props) => {
       updatePlaybackState(newTime, audioPlayer.current.duration);
     }
 
-    // Track seek event with Google Analytics
     trackButtonClick('audio_seek', {
       podcast_id: props.podcastId,
       podcast_title: props.title || 'Unknown',
@@ -306,9 +320,7 @@ const AudioPlayer = (props) => {
 
   const calculateTime = (secs) => {
     if (!isFinite(secs) || secs < 0) return '00:00';
-
     const timeInSeconds = Number(secs);
-
     const minutes = Math.floor(timeInSeconds / 60);
     const returnedMinutes = minutes < 10 ? `0${minutes}` : `${minutes}`;
     const seconds = Math.floor(timeInSeconds % 60);
