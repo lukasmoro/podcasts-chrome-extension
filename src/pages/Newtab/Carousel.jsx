@@ -152,10 +152,20 @@ const Carousel = ({ isBlurVisible, handleBlurToggle, onPodcastEnd }) => {
     loadPodcasts();
 
     // Set up listeners for updates - with performance optimizations
-    const storageListener = StorageService.addStorageListener(() => {
-      console.log('Storage updated - refreshing podcasts in Carousel');
-      // Only reload on collection changes (handled by the storage listener)
-      loadPodcasts();
+    const storageListener = StorageService.addStorageListener((newPodcasts, changes) => {
+      console.log('Storage updated - checking if we need to refresh Carousel');
+      
+      // Check if this update is coming from a playback change
+      // When only a single podcast's playback changes, we don't want to refresh
+      const isPodcastsCollectionChange = changes && 
+        Object.keys(changes).some(key => key === 'podcasts');
+        
+      if (isPodcastsCollectionChange) {
+        console.log('Podcast collection changed - refreshing Carousel');
+        loadPodcasts();
+      } else {
+        console.log('Skipping refresh - not a podcast collection change');
+      }
     });
 
     const eventListener = StorageService.addEventListener(

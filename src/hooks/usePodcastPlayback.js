@@ -24,18 +24,18 @@ const usePodcastPlayback = (podcastId) => {
       try {
         // First try to get the podcast info from the centralized storage
         const podcast = await StorageService.getPodcast(podcastId);
-        
+
         if (podcast && podcast.playback) {
           // Use the playback data from the podcast object
           const playback = podcast.playback;
-          
+
           if (playback.status === PLAYBACK_STATUS.FINISHED) {
             setCurrentTime(0);
             setWasFinished(true);
           } else {
             setCurrentTime(playback.currentTime || 0);
           }
-          
+
           setStatus(playback.status || PLAYBACK_STATUS.NOT_STARTED);
           setDuration(playback.duration || 0);
         } else {
@@ -63,19 +63,20 @@ const usePodcastPlayback = (podcastId) => {
       (event) => {
         if (event.detail && event.detail.podcastId === podcastId) {
           const { playbackState } = event.detail;
-          
+
           if (playbackState) {
             if (
               !wasFinished ||
               (playbackState.time > 0 &&
-                playbackState.time < playbackState.duration - FINISHED_THRESHOLD)
+                playbackState.time <
+                  playbackState.duration - FINISHED_THRESHOLD)
             ) {
               setCurrentTime(playbackState.time || 0);
             }
-            
+
             setStatus(playbackState.status || PLAYBACK_STATUS.NOT_STARTED);
             setDuration(playbackState.duration || 0);
-            
+
             if (playbackState.status === PLAYBACK_STATUS.FINISHED) {
               setWasFinished(true);
             }

@@ -43,7 +43,7 @@ export const usePodcastData = () => {
     }
 
     // Set up storage change listener - only for podcast collection changes
-    const removeStorageListener = StorageService.addStorageListener((newPodcasts) => {
+    const removeStorageListener = StorageService.addStorageListener((newPodcasts, changes) => {
       console.log('usePodcastData: storage updated', initiatedUpdateRef.current);
       if (!initiatedUpdateRef.current) {
         console.log('usePodcastData: reloading after storage change');

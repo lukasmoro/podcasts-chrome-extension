@@ -149,19 +149,8 @@ const AudioPlayer = (props) => {
         );
       }
 
-      // Update storage much less frequently during playback - every 5 seconds is sufficient
-      // The storage service also has additional debouncing for these updates
-      const now = Date.now();
-      if (now - lastUpdateTimeRef.current > 5000) {  // Increased from 1s to 5s
-        lastUpdateTimeRef.current = now;
-        
-        // Only update if playing and not already finished
-        if (isPlaying && status !== PLAYBACK_STATUS.FINISHED) {
-          // Use only one update method during regular playback
-          // The storage service will handle both storage locations and additional debouncing
-          updatePlaybackState(currentValue, audioDuration);
-        }
-      }
+      // No longer updating storage during continuous playback
+      // Storage will only be updated on pause, end, or unmount
     };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
@@ -321,11 +310,8 @@ const AudioPlayer = (props) => {
       );
     }
 
-    if (audioPlayer.current.duration) {
-      // User-initiated seek - this is an important playback event that should be persisted promptly
-      const status = newTime >= audioPlayer.current.duration ? 'FINISHED' : 'IN_PROGRESS';
-      updatePlaybackState(newTime, audioPlayer.current.duration);
-    }
+    // We're no longer updating storage on seek to match requirements
+    // Storage will only be updated on pause, end, or unmount
 
     trackButtonClick('audio_seek', {
       podcast_id: props.podcastId,

@@ -62,7 +62,7 @@ const Newtab = () => {
     checkForPodcasts();
 
     // Set up event listeners for updates - but only for collection changes, not playback
-    const storageListener = StorageService.addStorageListener((newPodcasts) => {
+    const storageListener = StorageService.addStorageListener((newPodcasts, changes) => {
       console.log('Newtab: Storage updated, podcasts count:', newPodcasts?.length);
       
       // Only update onboarding state if needed - avoid unnecessary re-renders

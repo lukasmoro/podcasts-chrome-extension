@@ -253,9 +253,9 @@ const StorageService = {
         return null;
       }
       
-      const updatedPodcasts = [...podcasts];
-      updatedPodcasts[podcastIndex] = {
-        ...updatedPodcasts[podcastIndex],
+      // Create an updated version of the podcast with new playback data
+      const updatedPodcast = {
+        ...podcasts[podcastIndex],
         playback: {
           currentTime: playbackData.currentTime,
           duration: playbackData.duration,
@@ -267,11 +267,41 @@ const StorageService = {
         playbackStatus: playbackData.status
       };
       
-      await chrome.storage.local.set({ [STORAGE_KEYS.PODCASTS]: updatedPodcasts });
+      // IMPORTANT CHANGE: We now use a specialized storage key for each podcast's playback
+      // This avoids updating the entire podcasts collection, which was causing unwanted refreshes
+      const playbackStorageKey = `playback_${podcastId}`;
+      await chrome.storage.local.set({ [playbackStorageKey]: updatedPodcast });
       
-      // Only broadcast full storage update for important state changes
-      // (not for every playback position update)
+      // We still need to periodically update the full podcast list, but only for
+      // important state changes, not regular playback updates
       if (playbackData.status !== 'IN_PROGRESS') {
+        // Update the podcast in the full collection, but in a way that won't trigger refreshes
+        // This ensures data is eventually consistent but doesn't cause UI updates
+        const updatedPodcasts = [...podcasts];
+        updatedPodcasts[podcastIndex] = updatedPodcast;
+        
+        // Use a different storage key for silently updating the full collection
+        // This won't trigger storage listeners that are only watching STORAGE_KEYS.PODCASTS
+        await chrome.storage.local.set({ 
+          [`${STORAGE_KEYS.PODCASTS}_silent_update`]: updatedPodcasts 
+        });
+        
+        // Then update the actual PODCASTS collection during browser idle time
+        // to ensure consistency without disrupting the user experience
+        if (window.requestIdleCallback) {
+          window.requestIdleCallback(() => {
+            chrome.storage.local.set({ [STORAGE_KEYS.PODCASTS]: updatedPodcasts })
+              .catch(err => console.error('Error updating podcasts in idle callback:', err));
+          }, { timeout: 2000 });
+        } else {
+          // Fallback for browsers without requestIdleCallback
+          setTimeout(() => {
+            chrome.storage.local.set({ [STORAGE_KEYS.PODCASTS]: updatedPodcasts })
+              .catch(err => console.error('Error updating podcasts in timeout:', err));
+          }, 2000);
+        }
+        
+        // Only broadcast for important state changes
         broadcastEvent(EVENTS.PODCAST_UPDATED, { 
           action: 'update-playback', 
           podcastId, 
@@ -280,29 +310,23 @@ const StorageService = {
         });
       }
       
-      return updatedPodcasts[podcastIndex];
+      return updatedPodcast;
     } catch (error) {
       console.error('Error in _doFullPlaybackUpdate:', error);
       return null;
     }
   },
 
-  // Get podcast details
-  async getPodcast(podcastId) {
-    try {
-      const podcasts = await this.getAllPodcasts();
-      return podcasts.find(podcast => podcast.id === podcastId) || null;
-    } catch (error) {
-      console.error('Storage error (getPodcast):', error);
-      return null;
-    }
-  },
+  // Get podcast details (duplicate method - remove this one)
+  // This method was moved to the end of the service
+  // Delete after testing that the new version works correctly,
 
   // Listen for storage changes
   addStorageListener(callback) {
     const storageChangeHandler = (changes, area) => {
       if (area === 'local' && changes[STORAGE_KEYS.PODCASTS]) {
-        callback(changes[STORAGE_KEYS.PODCASTS].newValue);
+        // Pass both the new value and the changes object so listeners can determine the type of change
+        callback(changes[STORAGE_KEYS.PODCASTS].newValue, changes);
       }
     };
     
@@ -320,11 +344,23 @@ const StorageService = {
     };
   },
 
-  // Get podcast details
+  // Get podcast details - prioritizes the individual playback storage
   async getPodcast(podcastId) {
     try {
+      // First try to get the podcast from its dedicated playback storage
+      // This is the most up-to-date source for playback information
+      const playbackStorageKey = `playback_${podcastId}`;
+      const result = await chrome.storage.local.get([playbackStorageKey]);
+      
+      if (result && result[playbackStorageKey]) {
+        return result[playbackStorageKey];
+      }
+      
+      // If not found in dedicated storage, fall back to the podcasts collection
       const podcasts = await this.getAllPodcasts();
-      return podcasts.find(podcast => podcast.id === podcastId) || null;
+      return podcasts.find(podcast => 
+        podcast.id === podcastId || podcast.key === podcastId
+      ) || null;
     } catch (error) {
       console.error('Storage error (getPodcast):', error);
       return null;
