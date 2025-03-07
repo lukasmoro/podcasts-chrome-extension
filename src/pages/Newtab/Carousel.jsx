@@ -130,7 +130,7 @@ const Carousel = ({ isBlurVisible, handleBlurToggle, onPodcastEnd }) => {
                     <div className="player-container">
                       <AudioPlayer
                         src={podcast.mp3}
-                        podcastId={`${podcast.title}-${podcast.episode}`}
+                        podcastId={podcast.key}
                         handleClick={handleBlurToggle}
                         onEnded={onPodcastEnd}
                       />

@@ -52,7 +52,7 @@ export const usePodcastData = () => {
       initiatedUpdateRef.current = false;
     };
 
-    const customEventHandler = () => {
+    const customEventHandler = (event) => {
       if (!initiatedUpdateRef.current) {
         logPodcastChange('Custom event received', event.detail);
         loadPodcasts();
@@ -175,21 +175,28 @@ export const usePodcastData = () => {
   // adding playback data to podcast data item to storage with callback function
   const handleUpdatePlayback = useCallback(
     (key, playbackData) => {
+      console.log(
+        `[PodcastData] Attempting to update podcast with key: ${key}`
+      );
+      console.log(`[PodcastData] Current items:`, items);
+
       const podcastIndex = items.findIndex((item) => item.key === key);
 
-      if (podcastIndex === -1) return;
+      if (podcastIndex === -1) {
+        console.error(`[PodcastData] No podcast found with key: ${key}`);
+        return;
+      }
 
       const updatedItems = [...items];
       const podcast = { ...updatedItems[podcastIndex] };
-
       podcast.currentTime = playbackData.currentTime;
       podcast.duration = playbackData.duration;
       podcast.playbackStatus = playbackData.status;
-
       updatedItems[podcastIndex] = podcast;
-
       initiatedUpdateRef.current = true;
       setItems(updatedItems);
+
+      console.log(`[PodcastData] About to save updated podcast:`, podcast);
 
       chrome.storage.local.set({ newUrls: updatedItems }, () => {
         logPodcastChange('Playback updated', { key, playbackData });

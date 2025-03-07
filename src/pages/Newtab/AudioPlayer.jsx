@@ -150,9 +150,15 @@ const AudioPlayer = (props) => {
       }
 
       const now = Date.now();
+
       if (now - lastUpdateTimeRef.current > 1000) {
         lastUpdateTimeRef.current = now;
         updatePlaybackState(currentValue, audioDuration);
+        handleUpdatePlayback(props.podcastId, {
+          currentTime: currentValue,
+          duration: audioDuration,
+          status: currentValue >= audioDuration ? 'FINISHED' : 'IN_PROGRESS',
+        });
       }
     };
 
@@ -161,7 +167,7 @@ const AudioPlayer = (props) => {
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
     };
-  }, [updatePlaybackState]);
+  }, [updatePlaybackState, handleUpdatePlayback, props.podcastId]);
 
   // handle pause/play events, duration change by user & audio completed
   useEffect(() => {
@@ -267,9 +273,22 @@ const AudioPlayer = (props) => {
 
       if (audio.currentTime && audio.duration) {
         updatePlaybackState(audio.currentTime, audio.duration);
+        handleUpdatePlayback(props.podcastId, {
+          currentTime: audio.currentTime,
+          duration: audio.duration,
+          status:
+            audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS',
+        });
       }
     };
-  }, [updatePlaybackState, props.onEnded, api, props.podcastId, props.title]);
+  }, [
+    updatePlaybackState,
+    handleUpdatePlayback,
+    props.onEnded,
+    api,
+    props.podcastId,
+    props.title,
+  ]);
 
   const togglePlayPause = () => {
     if (!audioPlayer.current) return;
@@ -306,6 +325,12 @@ const AudioPlayer = (props) => {
 
     if (audioPlayer.current.duration) {
       updatePlaybackState(newTime, audioPlayer.current.duration);
+      handleUpdatePlayback(props.podcastId, {
+        currentTime: newTime,
+        duration: audioPlayer.current.duration,
+        status:
+          newTime >= audioPlayer.current.duration ? 'FINISHED' : 'IN_PROGRESS',
+      });
     }
 
     trackButtonClick('audio_seek', {
