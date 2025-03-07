@@ -108,7 +108,7 @@ export const usePodcastData = () => {
         setItems(newUrls);
 
         chrome.storage.local.set({ newUrls }, () => {
-          console.log('Podcast added:', newItem);
+          logPodcastChange('Podcast added', newItem);
           storageUpdateNotification({ action: 'add', item: newItem });
         });
       } catch (error) {
@@ -129,6 +129,7 @@ export const usePodcastData = () => {
       setItems(newUrls);
 
       chrome.storage.local.set({ newUrls }, () => {
+        logPodcastChange('Podcast removed', key);
         storageUpdateNotification({ action: 'remove', key });
       });
     },
@@ -156,6 +157,10 @@ export const usePodcastData = () => {
       setItems(reorderedItems);
 
       chrome.storage.local.set({ newUrls: reorderedItems }, () => {
+        logPodcastChange('Podcasts reordered', {
+          sourceIndex,
+          destinationIndex,
+        });
         storageUpdateNotification({
           action: 'reorder',
           sourceIndex,
@@ -187,6 +192,7 @@ export const usePodcastData = () => {
       setItems(updatedItems);
 
       chrome.storage.local.set({ newUrls: updatedItems }, () => {
+        logPodcastChange('Playback updated', { key, playbackData });
         storageUpdateNotification({
           action: 'update-playback',
           key,
