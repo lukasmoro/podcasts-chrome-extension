@@ -3,10 +3,6 @@ import './Recommendations.css';
 
 function Recommendations({ podcasts, onAddPodcast }) {
   const handleAddPodcast = (podcast) => {
-    if (!podcast.feedUrl) {
-      console.error('No feed URL available for this podcast');
-      return;
-    }
     const podcastItem = {
       id: `podcast_${Date.now()}`,
       url: podcast.feedUrl,
