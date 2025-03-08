@@ -4,7 +4,6 @@ import { useSpring } from '@react-spring/core';
 import './AudioPlayer.css';
 import BehaviourClick from './BehaviourClick.jsx';
 import usePodcastPlayback from '../../hooks/usePodcastPlayback.js';
-import { usePodcastData } from '../../hooks/usePodcastData.js';
 import { PlayIcon } from '../Icons/PlayIcon';
 import { PauseIcon } from '../Icons/PauseIcon';
 import { trackButtonClick } from '../../utils/googleAnalytics';
@@ -23,17 +22,11 @@ const AudioPlayer = (props) => {
     status,
     updatePlaybackState,
     PLAYBACK_STATUS,
-    wasFinished,
   } = usePodcastPlayback(props.podcastId);
 
-  // Hook for podcast collection management
-  const { handleUpdatePlayback } = usePodcastData();
-
-  // Refs for DOM elements and tracking
+  // Refs for DOM elements
   const audioPlayer = useRef();
   const progressBar = useRef();
-  // Removed unused animationRef
-  const lastUpdateTimeRef = useRef(0);
 
   // Spring animation for player controls
   const [springs, api] = useSpring(() => ({
@@ -118,7 +111,7 @@ const AudioPlayer = (props) => {
     };
   }, [savedTime, isInitialized, status, PLAYBACK_STATUS]);
 
-  // Handle continuous playback updates
+  // Handle continuous time updates (UI only, no storage updates)
   useEffect(() => {
     const audio = audioPlayer.current;
     if (!audio) return;
@@ -149,19 +142,17 @@ const AudioPlayer = (props) => {
         );
       }
 
-      // No longer updating storage during continuous playback
-      // Storage will only be updated on pause, end, or unmount
+      // No storage updates during normal playback - only visual updates
     };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
 
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
-      lastUpdateTimeRef.current = 0; // Reset this ref on cleanup
     };
-  }, [updatePlaybackState, props.podcastId, isPlaying, status, PLAYBACK_STATUS]);
+  }, []);
 
-  // Handle play/pause/ended events
+  // Handle play/pause/ended events (with storage updates)
   useEffect(() => {
     const audio = audioPlayer.current;
     if (!audio) return;
@@ -169,12 +160,14 @@ const AudioPlayer = (props) => {
     const handlePlay = () => {
       setIsPlaying(true);
 
-      api.start({
-        to: {
-          opacity: 1,
-          y: 50,
-        },
-      }).catch(err => console.error('Animation error:', err));
+      api
+        .start({
+          to: {
+            opacity: 1,
+            y: 50,
+          },
+        })
+        .catch((err) => console.error('Animation error:', err));
 
       trackButtonClick('audio_play', {
         podcast_id: props.podcastId,
@@ -186,18 +179,20 @@ const AudioPlayer = (props) => {
     const handlePause = () => {
       setIsPlaying(false);
 
-      api.start({
-        to: {
-          opacity: 0,
-          y: 0,
-        },
-      }).catch(err => console.error('Animation error:', err));
+      api
+        .start({
+          to: {
+            opacity: 0,
+            y: 0,
+          },
+        })
+        .catch((err) => console.error('Animation error:', err));
 
       if (audio.currentTime && audio.duration) {
-        // Use only the primary update method for important state changes
-        // This will coordinate storage updates and event broadcasting
-        const status = audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS';
-        updatePlaybackState(audio.currentTime, audio.duration);
+        // Only update storage on pause event
+        const newStatus =
+          audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS';
+        updatePlaybackState(audio.currentTime, audio.duration, newStatus);
       }
 
       trackButtonClick('audio_pause', {
@@ -211,18 +206,18 @@ const AudioPlayer = (props) => {
     const handleEnded = () => {
       setIsPlaying(false);
 
-      api.start({
-        to: {
-          opacity: 0,
-          y: 0,
-        },
-      }).catch(err => console.error('Animation error:', err));
+      api
+        .start({
+          to: {
+            opacity: 0,
+            y: 0,
+          },
+        })
+        .catch((err) => console.error('Animation error:', err));
 
-      // Add a check to prevent duplicate finished state updates
+      // Update storage on ended event
       if (audio.duration && status !== PLAYBACK_STATUS.FINISHED) {
-        // Use only the primary update method for the finished state
-        // This is an important state change that should be persisted immediately
-        updatePlaybackState(audio.duration, audio.duration);
+        updatePlaybackState(audio.duration, audio.duration, 'FINISHED');
       }
 
       trackButtonClick('audio_completed', {
@@ -259,9 +254,9 @@ const AudioPlayer = (props) => {
 
       // Save current state on unmount
       if (audio.currentTime && audio.duration) {
-        // Use only one update method to prevent duplicate updates
-        const status = audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS';
-        updatePlaybackState(audio.currentTime, audio.duration);
+        const newStatus =
+          audio.currentTime >= audio.duration ? 'FINISHED' : 'IN_PROGRESS';
+        updatePlaybackState(audio.currentTime, audio.duration, newStatus);
       }
     };
   }, [
@@ -292,7 +287,7 @@ const AudioPlayer = (props) => {
     }
   };
 
-  // Progress bar change handler
+  // Progress bar change handler (with storage update)
   const changeRange = () => {
     if (!audioPlayer.current || !progressBar.current) return;
 
@@ -310,8 +305,12 @@ const AudioPlayer = (props) => {
       );
     }
 
-    // We're no longer updating storage on seek to match requirements
-    // Storage will only be updated on pause, end, or unmount
+    // Update storage on manual seek
+    if (audioPlayer.current.duration) {
+      const newStatus =
+        newTime >= audioPlayer.current.duration ? 'FINISHED' : 'IN_PROGRESS';
+      updatePlaybackState(newTime, audioPlayer.current.duration, newStatus);
+    }
 
     trackButtonClick('audio_seek', {
       podcast_id: props.podcastId,

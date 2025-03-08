@@ -1,15 +1,15 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useSprings, animated } from '@react-spring/web';
 import { useDrag } from '@use-gesture/react';
+import { EVENTS } from '../../utils/storageService';
 import clamp from 'lodash/clamp';
 import swap from 'lodash-move';
-import { EVENTS } from '../../utils/storageService';
 import './List.css';
 
 const List = ({
   items,
   removeUrl,
-  moveItem,
+  // moveItem,
   onDragStateChange,
   isPopup = false,
 }) => {
@@ -23,26 +23,61 @@ const List = ({
   const lastReorderedRef = useRef(null);
   const lastProcessedItemsRef = useRef([]);
 
+  // Add state to track if we're currently in an animation
+  const isAnimatingRef = useRef(false);
+  // Track the most recent reordering
+  const recentReorderingRef = useRef(null);
+
   const areItemsEquivalent = useCallback((prevItems, newItems) => {
     if (prevItems.length !== newItems.length) return false;
 
     return newItems.every((item, index) => {
-      return item.key === prevItems[index]?.key;
+      return item.id === prevItems[index]?.id;
     });
   }, []);
 
+  // This function compares if the current items already reflect our last reordering
+  const hasReorderingBeenApplied = useCallback(() => {
+    if (!recentReorderingRef.current) return true;
+
+    const { fromIndex, toIndex } = recentReorderingRef.current;
+
+    // Check if the items are already in the correct order according to our last reordering
+    const sourceKey = lastProcessedItemsRef.current[fromIndex]?.id;
+    const matchesReordering = items[toIndex]?.id === sourceKey;
+
+    return matchesReordering;
+  }, [items]);
+
   useEffect(() => {
+    // Don't process items changes during animation
+    if (isAnimatingRef.current) return;
+
     const itemsChanged = !areItemsEquivalent(
       lastProcessedItemsRef.current,
       items
     );
 
-    // In popup mode, always sync order ref with items when items change (if actually changed)
-    if ((isPopup && !initialRenderRef.current) || itemsChanged) {
-      order.current = items.map((_, index) => index);
+    // Special handling for first render or popup mode
+    if (
+      initialRenderRef.current ||
+      (isPopup && !initialRenderRef.current) ||
+      itemsChanged
+    ) {
+      // If we have a recent reordering and items haven't been updated to match it,
+      // keep our current order
+      if (recentReorderingRef.current && !hasReorderingBeenApplied()) {
+        console.log(
+          'Items changed but maintaining local order due to recent reordering'
+        );
+      } else {
+        // Otherwise, sync order with the new items
+        order.current = items.map((_, index) => index);
+      }
+
       lastProcessedItemsRef.current = [...items];
     }
-  }, [items, isPopup, areItemsEquivalent]);
+  }, [items, isPopup, areItemsEquivalent, hasReorderingBeenApplied]);
 
   // Listen for podcast storage updates
   useEffect(() => {
@@ -66,17 +101,7 @@ const List = ({
       setIsVisible(true);
       initialRenderRef.current = false;
     }
-  }, []);
-
-  // Update order ref when items change (after initial render and if not in animation)
-  useEffect(() => {
-    if (!initialRenderRef.current && animationCompleteRef.current) {
-      if (!areItemsEquivalent(lastProcessedItemsRef.current, items)) {
-        order.current = items.map((_, index) => index);
-        lastProcessedItemsRef.current = [...items];
-      }
-    }
-  }, [items, areItemsEquivalent]);
+  }, [items]);
 
   // The animation function
   const fn =
@@ -87,7 +112,7 @@ const List = ({
           y: curIndex * itemHeight + y,
           scale: 1.03,
           zIndex: 1,
-          immediate: (key) => key === 'y' || key === 'zIndex',
+          immediate: (id) => id === 'y' || id === 'zIndex',
         };
       }
 
@@ -108,10 +133,6 @@ const List = ({
     zIndex: 0,
     immediate: true,
   }));
-
-  // Debounce drag updates to prevent flooding the storage
-  const lastDragTimestampRef = useRef(0);
-  const pendingDragUpdateRef = useRef(null);
 
   const bind = useDrag(
     ({ args: [originalIndex], active, movement: [_, y], last }) => {
@@ -135,6 +156,7 @@ const List = ({
 
       const newOrder = swap(order.current, curIndex, curRow);
 
+      // Update springs to show current drag state
       api.start(fn(newOrder, active, originalIndex, curIndex, y));
 
       if (!active && last) {
@@ -154,29 +176,36 @@ const List = ({
             isPopup,
           });
 
+          // Update local order
           order.current = newOrder;
-          api.start(fn(order.current));
 
-          pendingDragUpdateRef.current = setTimeout(() => {
-            lastDragTimestampRef.current = Date.now();
-            moveItem(curIndex, curRow);
-            animationCompleteRef.current = true;
-            pendingDragUpdateRef.current = null;
-          }, 300);
+          // Mark that we're animating
+          isAnimatingRef.current = true;
+
+          // Remember the reordering operation for comparison
+          recentReorderingRef.current = {
+            fromIndex: curIndex,
+            toIndex: curRow,
+            timestamp: Date.now(),
+          };
+
+          isAnimatingRef.current = false;
+          // moveItem(curIndex, curRow);
+          recentReorderingRef.current = null;
         }
       }
     }
   );
 
-  const handleRemove = (key) => {
-    removeUrl(key);
+  const handleRemove = (id) => {
+    removeUrl(id);
   };
 
   return (
     <div className="podcast-items-container" ref={containerRef}>
       {springs.map(({ y, scale, zIndex }, i) => (
         <animated.div
-          key={items[i]?.key || `item-${i}`}
+          id={items[i]?.id || `item-${i}`}
           ref={(el) => (itemsRef.current[i] = el)}
           {...bind(i)}
           style={{
@@ -192,7 +221,7 @@ const List = ({
           <div className="podcast-items">
             <img
               className="podcast-item-thumbnail"
-              src={items[i]?.artwork}
+              src={items[i]?.image}
               alt={items[i]?.title || items[i]?.podcastName || 'Podcast'}
             />
             <p
@@ -206,7 +235,7 @@ const List = ({
             </p>
             <button
               className="podcast-remove-btn"
-              onClick={() => handleRemove(items[i]?.key, i)}
+              onClick={() => handleRemove(items[i]?.id, i)}
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             >

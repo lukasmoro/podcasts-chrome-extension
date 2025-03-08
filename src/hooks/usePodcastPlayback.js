@@ -16,17 +16,16 @@ const usePodcastPlayback = (podcastId) => {
   const [status, setStatus] = useState(PLAYBACK_STATUS.NOT_STARTED);
   const [wasFinished, setWasFinished] = useState(false);
 
+  // Load initial playback state and set up event listeners
   useEffect(() => {
     let unsubscribeStorage = null;
     let unsubscribeEvents = null;
 
     const loadPlaybackState = async () => {
       try {
-        // First try to get the podcast info from the centralized storage
         const podcast = await StorageService.getPodcast(podcastId);
 
         if (podcast && podcast.playback) {
-          // Use the playback data from the podcast object
           const playback = podcast.playback;
 
           if (playback.status === PLAYBACK_STATUS.FINISHED) {
@@ -61,7 +60,7 @@ const usePodcastPlayback = (podcastId) => {
     unsubscribeEvents = StorageService.addEventListener(
       EVENTS.PLAYBACK_UPDATED,
       (event) => {
-        if (event.detail && event.detail.podcastId === podcastId) {
+        if (event.detail && event.detail.podcastID === podcastId) {
           const { playbackState } = event.detail;
 
           if (playbackState) {
@@ -91,19 +90,30 @@ const usePodcastPlayback = (podcastId) => {
     };
   }, [podcastId, wasFinished]);
 
-  const updatePlaybackState = async (time, totalDuration) => {
+  // Update playback state based on player events
+  const updatePlaybackState = async (
+    time,
+    totalDuration,
+    forcedStatus = null
+  ) => {
     try {
-      let newStatus = status;
+      // Determine the playback status if not explicitly provided
+      let newStatus = forcedStatus || status;
 
-      if (time === 0) {
-        newStatus = wasFinished
-          ? PLAYBACK_STATUS.FINISHED
-          : PLAYBACK_STATUS.UNPLAYED;
-      } else if (totalDuration && totalDuration - time <= FINISHED_THRESHOLD) {
-        newStatus = PLAYBACK_STATUS.FINISHED;
-        setWasFinished(true);
-      } else if (time > 0) {
-        newStatus = PLAYBACK_STATUS.IN_PROGRESS;
+      if (forcedStatus === null) {
+        if (time === 0) {
+          newStatus = wasFinished
+            ? PLAYBACK_STATUS.FINISHED
+            : PLAYBACK_STATUS.UNPLAYED;
+        } else if (
+          totalDuration &&
+          totalDuration - time <= FINISHED_THRESHOLD
+        ) {
+          newStatus = PLAYBACK_STATUS.FINISHED;
+          setWasFinished(true);
+        } else if (time > 0) {
+          newStatus = PLAYBACK_STATUS.IN_PROGRESS;
+        }
       }
 
       // Use the centralized storage service

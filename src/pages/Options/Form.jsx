@@ -36,17 +36,18 @@ function Form(props) {
     console.log('Selected podcast URL:', podcast.feedUrl);
 
     props.onSubmit({
-      id: `podcast_${new Date().getTime()}`,
-      key: `podcast_${new Date().getTime()}`,
+      id: `podcast_${Date.now()}`,
       url: podcast.feedUrl,
-      text: podcast.feedUrl,
       title: podcast.collectionName,
-      podcastName: podcast.collectionName,
-      artwork: podcast.artworkUrl600,
-      currentTime: 0,
-      duration: 0,
-      playbackStatus: 'NOT_STARTED',
+      image: podcast.artworkUrl600,
+      playback: {
+        currentTime: 0,
+        duration: 0,
+        status: 'NOT_STARTED',
+      },
+      addedAt: Date.now(),
     });
+
     setInput('');
     setSearchResults([]);
   };
