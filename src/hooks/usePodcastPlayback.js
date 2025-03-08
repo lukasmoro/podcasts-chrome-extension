@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { StorageService, EVENTS } from '../utils/storageService';
 
 const PLAYBACK_STATUS = {
-  NOT_STARTED: 'NOT_STARTED',
   UNPLAYED: 'UNPLAYED',
   IN_PROGRESS: 'IN_PROGRESS',
   FINISHED: 'FINISHED',
@@ -13,7 +12,7 @@ const FINISHED_THRESHOLD = 30;
 const usePodcastPlayback = (podcastId) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [status, setStatus] = useState(PLAYBACK_STATUS.NOT_STARTED);
+  const [status, setStatus] = useState(PLAYBACK_STATUS.UNPLAYED);
   const [wasFinished, setWasFinished] = useState(false);
 
   useEffect(() => {
@@ -34,12 +33,12 @@ const usePodcastPlayback = (podcastId) => {
             setCurrentTime(playback.currentTime || 0);
           }
 
-          setStatus(playback.status || PLAYBACK_STATUS.NOT_STARTED);
+          setStatus(playback.status || PLAYBACK_STATUS.UNPLAYED);
           setDuration(playback.duration || 0);
         } else {
           // No playback data found, set default state
           setCurrentTime(0);
-          setStatus(PLAYBACK_STATUS.NOT_STARTED);
+          setStatus(PLAYBACK_STATUS.UNPLAYED);
           setDuration(0);
           setWasFinished(false);
         }
@@ -72,7 +71,7 @@ const usePodcastPlayback = (podcastId) => {
               setCurrentTime(playbackState.time || 0);
             }
 
-            setStatus(playbackState.status || PLAYBACK_STATUS.NOT_STARTED);
+            setStatus(playbackState.status || PLAYBACK_STATUS.UNPLAYED);
             setDuration(playbackState.duration || 0);
 
             if (playbackState.status === PLAYBACK_STATUS.FINISHED) {
@@ -137,12 +136,12 @@ const usePodcastPlayback = (podcastId) => {
       await StorageService.updatePlayback(podcastId, {
         currentTime: 0,
         duration: 0,
-        status: PLAYBACK_STATUS.NOT_STARTED,
+        status: PLAYBACK_STATUS.UNPLAYED,
       });
 
       // Update local state
       setCurrentTime(0);
-      setStatus(PLAYBACK_STATUS.NOT_STARTED);
+      setStatus(PLAYBACK_STATUS.UNPLAYED);
       setDuration(0);
       setWasFinished(false);
     } catch (error) {
