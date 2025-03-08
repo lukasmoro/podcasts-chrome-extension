@@ -12,196 +12,94 @@ const Carousel = ({ isBlurVisible, handleBlurToggle, onPodcastEnd }) => {
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoadingActive] = useState(true);
   const [activeInfoCard, setActiveInfoCard] = useState(null);
-  const [podcastFeedItems, setPodcastFeedItems] = useState([]);
 
+  // scroll position hook for indicators
   const { scrollPosition, indicatorIndex } = useScrollPosition(
     'parent-container',
     items.length
   );
 
-  const handleLoading = () => {
-    setIsLoadingActive(false);
-  };
-
-  // Function to fetch and parse RSS feeds for each podcast
-  const fetchPodcastContent = async (podcasts) => {
+  // fetch mp3 & episode name of podcast item
+  const fetchEpisode = async (podcasts) => {
     if (!podcasts || podcasts.length === 0) {
-      setPodcastFeedItems([]);
       setItems([]);
       setIsLoadingActive(false);
       return;
     }
-
     setIsLoadingActive(true);
-    console.log('Fetching podcast content for', podcasts.length, 'podcasts');
-
     try {
-      // Get URLs from the podcast entries
-      const urls = podcasts.map((podcast) => podcast.url);
-
-      // Safety check - make sure we have valid URLs
-      if (urls.filter((url) => url).length === 0) {
-        console.error('No valid URLs found in podcasts array:', podcasts);
-        setIsLoadingActive(false);
-        return;
-      }
-
-      // Fetch and parse each RSS feed
       const results = await Promise.all(
         podcasts.map(async (podcast) => {
           const url = podcast.url;
-          if (!url) {
-            console.error('No URL found for podcast:', podcast);
-            return null;
-          }
-
           try {
             const response = await fetch(url);
             if (!response.ok) {
               console.error(
                 `Error fetching podcast at ${url}: ${response.status} ${response.statusText}`
               );
-              // Return a minimal podcast object with the data we already have
               return {
-                title: podcast.title || 'Unknown Podcast',
                 episode: 'Unable to load episode',
                 mp3: null,
-                image: podcast.image,
-                podcastId: podcast.id,
-                originalUrl: url,
-                error: true,
-                errorMessage: `Failed to load podcast feed: ${response.status} ${response.statusText}`,
               };
             }
-
             const text = await response.text();
             const parsedItem = parseRss(text);
-
             if (parsedItem) {
-              // Add podcast collection item data to the parsed RSS feed
               return {
                 ...parsedItem,
                 title: parsedItem.title || podcast.title,
                 podcastId: podcast.id,
-                originalUrl: url,
-                playbackStatus: podcast.playback?.status,
-                error: false,
               };
             }
-
-            // Return a minimal podcast object if parsing failed
-            return {
-              title: podcast.title || 'Unknown Podcast',
-              episode: 'Unable to parse episode',
-              mp3: null,
-              image: podcast.artwork,
-              podcastId: podcast.id,
-              originalUrl: url,
-              error: true,
-              errorMessage: 'Failed to parse podcast feed',
-            };
           } catch (error) {
             console.error(`Error fetching podcast at ${url}:`, error);
-            // Return a minimal podcast object with the data we already have
-            return {
-              title: podcast.title || 'Unknown Podcast',
-              episode: 'Unable to load episode',
-              mp3: null,
-              image: podcast.image,
-              podcastId: podcast.id,
-              originalUrl: url,
-              error: true,
-              errorMessage: error.message,
-            };
           }
         })
       );
-
-      console.log('Fetched podcast content results:', results);
-
-      // Filter out any complete failures (should be rare now with our fallbacks)
       const validResults = results.filter((item) => item !== null);
-      setPodcastFeedItems(validResults);
       setItems(validResults);
-    } catch (error) {
-      console.error('Error in fetchPodcastContent:', error);
     } finally {
       setTimeout(() => setIsLoadingActive(false), 500);
     }
   };
 
-  // Load podcasts from storage and fetch their content
+  // load podcast items & fetch episode
   const loadPodcasts = async () => {
     try {
-      // Get podcasts from the centralized storage
       const podcasts = await StorageService.getAllPodcasts();
-
-      // Fetch and parse the RSS content for each podcast
-      fetchPodcastContent(podcasts);
+      fetchEpisode(podcasts);
     } catch (error) {
-      console.error('Error loading podcasts:', error);
       setIsLoadingActive(false);
     }
   };
 
+  // initial loading & event listeners to trigger updates
   useEffect(() => {
-    // Initial load
     loadPodcasts();
-
-    // Set up listeners for updates - with performance optimizations
     const storageListener = StorageService.addStorageListener(
       (newPodcasts, changes) => {
-        console.log(
-          'Storage updated - checking if we need to refresh Carousel'
-        );
-
-        // Check if this update is coming from a playback change
-        // When only a single podcast's playback changes, we don't want to refresh
         const isPodcastsCollectionChange =
           changes && Object.keys(changes).some((key) => key === 'podcasts');
-
         if (isPodcastsCollectionChange) {
-          console.log('Podcast collection changed - refreshing Carousel');
           loadPodcasts();
-        } else {
-          console.log('Skipping refresh - not a podcast collection change');
         }
       }
     );
-
     const eventListener = StorageService.addEventListener(
       EVENTS.PODCAST_UPDATED,
       (event) => {
-        // Playback updates shouldn't trigger a full reload of all podcasts
         if (
           event.detail?.action === 'update-playback' ||
           event.detail?.silent
         ) {
-          console.log('Carousel: Ignoring playback update for efficiency');
           return;
         }
-
-        console.log(
-          'Podcast updated event received in Carousel:',
-          event.detail?.action
-        );
         loadPodcasts();
       }
     );
-
     return () => {
-      // Clean up all listeners
       if (storageListener) storageListener();
       if (eventListener) eventListener();
-    };
-  }, []);
-
-  useEffect(() => {
-    const initialLoadingTimer = setTimeout(() => {
-      handleLoading();
-    }, 2000);
-    return () => {
-      clearTimeout(initialLoadingTimer);
     };
   }, []);
 
@@ -249,19 +147,13 @@ const Carousel = ({ isBlurVisible, handleBlurToggle, onPodcastEnd }) => {
                       setExpanded={setActiveInfoCard}
                     />
                     <div className="player-container">
-                      {podcast.error ? (
-                        <div className="error-message">
-                          Unable to load podcast audio. Try refreshing.
-                        </div>
-                      ) : (
-                        <AudioPlayer
-                          src={podcast.mp3}
-                          podcastId={podcast.podcastId}
-                          title={podcast.title}
-                          handleClick={handleBlurToggle}
-                          onEnded={onPodcastEnd}
-                        />
-                      )}
+                      <AudioPlayer
+                        src={podcast.mp3}
+                        podcastId={podcast.podcastId}
+                        title={podcast.title}
+                        handleClick={handleBlurToggle}
+                        onEnded={onPodcastEnd}
+                      />
                     </div>
                   </div>
                 </li>

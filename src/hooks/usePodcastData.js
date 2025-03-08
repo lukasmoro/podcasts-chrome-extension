@@ -6,14 +6,12 @@ export const usePodcastData = () => {
   //states & refs
   const [items, setItems] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
-
   const isReorderingRef = useRef(false);
   const lastReorderSignatureRef = useRef(null);
   const initiatedUpdateRef = useRef(false);
 
   useEffect(() => {
     loadPodcasts();
-
     function loadPodcasts() {
       StorageService.getAllPodcasts().then((podcasts) => {
         setItems(podcasts);

@@ -16,7 +16,6 @@ const usePodcastPlayback = (podcastId) => {
   const [status, setStatus] = useState(PLAYBACK_STATUS.NOT_STARTED);
   const [wasFinished, setWasFinished] = useState(false);
 
-  // Load initial playback state and set up event listeners
   useEffect(() => {
     let unsubscribeStorage = null;
     let unsubscribeEvents = null;

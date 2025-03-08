@@ -7,11 +7,8 @@ function Recommendations({ podcasts, onAddPodcast }) {
       console.error('No feed URL available for this podcast');
       return;
     }
-
-    const timestamp = Date.now();
-
     const podcastItem = {
-      id: `podcast_${timestamp}`,
+      id: `podcast_${Date.now()}`,
       url: podcast.feedUrl,
       title: podcast.collectionName,
       image: podcast.artworkUrl600,
@@ -22,7 +19,6 @@ function Recommendations({ podcasts, onAddPodcast }) {
       },
       addedAt: timestamp,
     };
-
     onAddPodcast(podcastItem);
   };
 
